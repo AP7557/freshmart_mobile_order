@@ -1,7 +1,18 @@
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import {
+  View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
+
+interface OrderLine {
+  id: number;
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  modifiers: string[];
+}
 
 interface OrderDetails {
   id: number;
@@ -13,94 +24,133 @@ interface OrderDetails {
   discountTotal: number;
   taxTotal: number;
   total: number;
-  lines: Array<{ id: number; itemName: string; quantity: number; lineTotal: number; modifiers: string[] }>;
+  lines: OrderLine[];
 }
 
-const STATUS_ICON: Record<string, string> = {
-  pending: "⏳",
-  paid: "✅",
-  preparing: "👨‍🍳",
-  ready: "🔔",
-  completed: "🎉",
-  cancelled: "❌",
-};
+const STATUS_ICON: Record<string, string> = { pending: "⏳", paid: "✅", preparing: "👨‍🍳", ready: "🔔", completed: "🎉", cancelled: "❌" };
+const STATUS_COLOR: Record<string, string> = { pending: "#f59e0b", paid: "#3b82f6", preparing: "#8b5cf6", ready: "#10b981", completed: "#059669", cancelled: "#ef4444" };
+
+function fmt(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
+function fmtTime(iso: string) { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
+
+function Row({ label, value, bold = false, valueColor }: { label: string; value: string; bold?: boolean; valueColor?: string }) {
+  return (
+    <View style={sr.row}>
+      <Text style={sr.label}>{label}</Text>
+      <Text style={[sr.value, bold && sr.valueBold, valueColor ? { color: valueColor } : undefined]}>{value}</Text>
+    </View>
+  );
+}
+const sr = StyleSheet.create({
+  row: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+  label: { fontSize: 13, color: "#6b7280" },
+  value: { fontSize: 13, color: "#111827" },
+  valueBold: { fontWeight: "800", fontSize: 15 },
+});
 
 export default function OrderConfirmationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, isLoading } = useQuery<OrderDetails>({
+  const router = useRouter();
+
+  const { data, isLoading, isError } = useQuery<OrderDetails>({
     queryKey: ["order", id],
     queryFn: () => apiFetch(`/api/orders/${id}`),
     refetchInterval: 30_000,
+    enabled: !!id,
   });
 
-  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /></View>;
-  if (!data) return <View style={styles.center}><Text>Order not found.</Text></View>;
+  if (isLoading) return <View style={s.center}><ActivityIndicator size="large" color="#3b82f6" /></View>;
+  if (isError || !data) {
+    return (
+      <View style={s.center}>
+        <Text style={s.errorIcon}>⚠️</Text>
+        <Text style={s.errorTitle}>Could not load order</Text>
+        <TouchableOpacity style={s.homeBtn} onPress={() => router.replace("/")}><Text style={s.homeBtnText}>Back to Home</Text></TouchableOpacity>
+      </View>
+    );
+  }
+
+  const statusColor = STATUS_COLOR[data.status] ?? "#6b7280";
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.scroll}>
-      <View style={styles.hero}>
-        <Text style={styles.heroIcon}>{STATUS_ICON[data.status] ?? "📋"}</Text>
-        <Text style={styles.heroTitle}>Order #{data.id}</Text>
-        <Text style={styles.heroStatus}>{data.status.toUpperCase()}</Text>
+    <ScrollView style={s.screen} contentContainerStyle={s.scroll}>
+      <View style={s.hero}>
+        <Text style={s.heroIcon}>{STATUS_ICON[data.status] ?? "📋"}</Text>
+        <Text style={s.heroTitle}>Order #{data.id}</Text>
+        <View style={[s.statusBadge, { backgroundColor: statusColor }]}>
+          <Text style={s.statusText}>{data.status.toUpperCase()}</Text>
+        </View>
+        <Text style={s.heroSub}>Ready by approximately {fmtTime(data.estimatedReadyAt)}</Text>
       </View>
 
-      <View style={styles.card}>
-        <Row label="Name" value={data.customerName} />
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Customer</Text>
+        <Row label="Name"  value={data.customerName} />
         <Row label="Phone" value={data.customerPhone} />
-        <Row label="Ready by" value={new Date(data.estimatedReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} />
       </View>
 
-      <Text style={styles.sectionTitle}>Items</Text>
-      <View style={styles.card}>
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Items</Text>
         {data.lines.map((line) => (
-          <View key={line.id} style={styles.lineItem}>
-            <View style={styles.lineHeader}>
-              <Text style={styles.lineName}>{line.quantity}× {line.itemName}</Text>
-              <Text style={styles.linePrice}>${(line.lineTotal / 100).toFixed(2)}</Text>
+          <View key={line.id} style={s.lineItem}>
+            <View style={s.lineTop}>
+              <Text style={s.lineQty}>{line.quantity}×</Text>
+              <Text style={s.lineName}>{line.itemName}</Text>
+              <Text style={s.linePrice}>{fmt(line.lineTotal)}</Text>
             </View>
-            {line.modifiers?.map((m, i) => (
-              <Text key={i} style={styles.lineMod}>+ {m}</Text>
-            ))}
+            {line.modifiers.length > 0 && (
+              <View style={s.lineMods}>
+                {line.modifiers.map((m, i) => <Text key={i} style={s.lineMod}>✓ {m}</Text>)}
+              </View>
+            )}
           </View>
         ))}
       </View>
 
-      <View style={styles.card}>
-        <Row label="Subtotal" value={`$${(data.subtotal / 100).toFixed(2)}`} />
-        {data.discountTotal > 0 && <Row label="Discount" value={`-$${(data.discountTotal / 100).toFixed(2)}`} color="#16a34a" />}
-        <Row label="Tax" value={`$${(data.taxTotal / 100).toFixed(2)}`} />
-        <Row label="Total Charged" value={`$${(data.total / 100).toFixed(2)}`} bold />
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Pricing</Text>
+        <Row label="Subtotal"  value={fmt(data.subtotal)} />
+        {data.discountTotal > 0 && <Row label="Discount" value={`-${fmt(data.discountTotal)}`} valueColor="#059669" />}
+        <Row label="Tax"       value={fmt(data.taxTotal)} />
+        <View style={s.divider} />
+        <Row label="Total"     value={fmt(data.total)} bold />
       </View>
+
+      <View style={s.notice}>
+        <Text style={s.noticeText}>🔄  This page refreshes every 30 seconds to show your order status.</Text>
+      </View>
+
+      <TouchableOpacity style={s.homeBtn} onPress={() => router.replace("/")}>
+        <Text style={s.homeBtnText}>Back to Home</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
-function Row({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, bold && styles.rowValueBold, color ? { color } : {}]}>{value}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#f9fafb" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { padding: 16, gap: 16, paddingBottom: 40 },
-  hero: { alignItems: "center", paddingVertical: 24, gap: 6 },
-  heroIcon: { fontSize: 52 },
-  heroTitle: { fontSize: 24, fontWeight: "700", color: "#111827" },
-  heroStatus: { fontSize: 14, fontWeight: "600", color: "#6b7280", letterSpacing: 1 },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 16, gap: 10, elevation: 1, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  lineItem: { gap: 2 },
-  lineHeader: { flexDirection: "row", justifyContent: "space-between" },
-  lineName: { fontSize: 14, fontWeight: "600", color: "#111827", flex: 1 },
-  linePrice: { fontSize: 14, fontWeight: "600", color: "#111827" },
-  lineMod: { fontSize: 12, color: "#6b7280", marginLeft: 8 },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  rowLabel: { fontSize: 14, color: "#6b7280" },
-  rowValue: { fontSize: 14, color: "#111827" },
-  rowValueBold: { fontWeight: "700", fontSize: 15 },
+  scroll: { padding: 16, gap: 14, paddingBottom: 40 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  errorIcon: { fontSize: 48 },
+  errorTitle: { fontSize: 16, color: "#6b7280" },
+  hero: { backgroundColor: "#111827", borderRadius: 20, padding: 24, alignItems: "center", gap: 8 },
+  heroIcon: { fontSize: 44 },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: "#fff" },
+  statusBadge: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 4 },
+  statusText: { color: "#fff", fontWeight: "800", fontSize: 12, letterSpacing: 1 },
+  heroSub: { fontSize: 13, color: "#9ca3af", marginTop: 2 },
+  card: { backgroundColor: "#fff", borderRadius: 14, padding: 14, gap: 6 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: "#111827", marginBottom: 4 },
+  lineItem: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#f9fafb" },
+  lineTop: { flexDirection: "row", alignItems: "center", gap: 6 },
+  lineQty: { fontSize: 13, color: "#9ca3af", width: 26 },
+  lineName: { flex: 1, fontSize: 14, fontWeight: "600", color: "#111827" },
+  linePrice: { fontSize: 13, color: "#374151" },
+  lineMods: { marginLeft: 26, marginTop: 3, gap: 2 },
+  lineMod: { fontSize: 12, color: "#6b7280" },
+  divider: { height: 1, backgroundColor: "#f3f4f6", marginVertical: 4 },
+  notice: { backgroundColor: "#f0f9ff", borderRadius: 10, padding: 12 },
+  noticeText: { fontSize: 12, color: "#0284c7", lineHeight: 18 },
+  homeBtn: { backgroundColor: "#111827", borderRadius: 14, padding: 16, alignItems: "center" },
+  homeBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

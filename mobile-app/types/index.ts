@@ -3,8 +3,19 @@ export interface Item {
   name: string;
   description: string;
   basePrice: number;
-  imageUrl: string;
+  imageUrl: string | null;
   isActive: boolean;
+}
+
+export interface MenuModifier {
+  modifierId: number;
+  modifierName: string;
+  modifierType: "single" | "multiple";
+  required: boolean;
+  maxChoices: number | null;
+  sortOrder: number;
+  category: string;
+  itemId: number;
 }
 
 export interface ModifierOption {
@@ -15,23 +26,24 @@ export interface ModifierOption {
   isDefault: boolean;
 }
 
-export interface Modifier {
-  modifierId: number;
-  modifierName: string;
-  modifierType: "single" | "multiple";
-  required: boolean;
-  maxChoices: number | null;
-  itemId: number;
-}
+export type PromoType = "percent" | "fixed" | "item" | "buy_x_get_y" | "bundle";
 
 export interface Promotion {
   id: number;
   name: string;
   description: string;
-  type: "percent" | "fixed" | "item";
+  type: PromoType;
   value: number;
   isActive: boolean;
   promotionCode: string | null;
+  startAt: string;
+  endAt: string;
+  minOrderTotal: number;
+  triggerQty: number;
+  rewardQty: number;
+  triggerItemIds: number[];
+  rewardItemIds: number[];
+  appliesTo: string;
 }
 
 export interface CartItem {
@@ -51,6 +63,14 @@ export interface OrderConfirmation {
     discountTotal: number;
     taxTotal: number;
     total: number;
+    lineDiscounts: Record<number, number>;
   };
   estimatedReadyAt: string;
+}
+
+export interface MenuData {
+  items: Item[];
+  modifiers: MenuModifier[];
+  modifierOptions: ModifierOption[];
+  promotions: Promotion[];
 }

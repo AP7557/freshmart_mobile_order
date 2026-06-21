@@ -1,29 +1,29 @@
 {
   "expo": {
-    "name": "Ordering App",
-    "slug": "ordering-app",
+    "name": "FreshMart Order",
+    "slug": "freshmart-order",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "ordering",
+    "scheme": "freshmartorder",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourcompany.ordering"
+      "bundleIdentifier": "com.yourcompany.freshmartorder"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.yourcompany.ordering"
+      "package": "com.yourcompany.freshmartorder"
     },
     "plugins": [
       "expo-router",
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "merchant.com.yourcompany.ordering",
+          "merchantIdentifier": "merchant.com.yourcompany.freshmartorder",
           "enableGooglePay": true
         }
       ]
