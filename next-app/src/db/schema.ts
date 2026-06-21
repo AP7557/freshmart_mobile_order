@@ -8,184 +8,190 @@ import {
   timestamp,
   index,
   primaryKey,
-} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+} from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const modifierTypeEnum = pgEnum("modifier_type", ["single", "multiple"]);
-export const promotionTypeEnum = pgEnum("promotion_type", ["percent", "fixed", "item"]);
-export const orderStatusEnum = pgEnum("order_status", [
-  "pending",
-  "paid",
-  "preparing",
-  "ready",
-  "completed",
-  "cancelled",
+export const modifierTypeEnum = pgEnum('modifier_type', ['single', 'multiple']);
+export const promotionTypeEnum = pgEnum('promotion_type', [
+  'percent',
+  'fixed',
+  'item',
 ]);
-export const userRoleEnum = pgEnum("user_role", ["admin", "kitchen"]);
+export const orderStatusEnum = pgEnum('order_status', [
+  'pending',
+  'paid',
+  'preparing',
+  'ready',
+  'completed',
+  'cancelled',
+]);
+export const userRoleEnum = pgEnum('user_role', ['admin', 'kitchen']);
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-export const settings = pgTable("settings", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
+export const settings = pgTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
 });
 
 // ─── Users (admin + kitchen) ─────────────────────────────────────────────────
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  role: userRoleEnum("role").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  role: userRoleEnum('role').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ─── Items ───────────────────────────────────────────────────────────────────
 
 export const items = pgTable(
-  "items",
+  'items',
   {
-    id: serial("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description").notNull().default(""),
-    basePrice: integer("base_price").notNull(),
-    imageUrl: text("image_url").notNull().default(""),
-    isActive: boolean("is_active").notNull().default(true),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    basePrice: integer('base_price').notNull(),
+    imageUrl: text('image_url').notNull().default(''),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
-  (t) => [index("items_is_active_idx").on(t.isActive)]
+  (t) => [index('items_is_active_idx').on(t.isActive)],
 );
 
 // ─── Modifiers ───────────────────────────────────────────────────────────────
 
-export const modifiers = pgTable("modifiers", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  type: modifierTypeEnum("type").notNull(),
-  required: boolean("required").notNull().default(false),
-  maxChoices: integer("max_choices"),
+export const modifiers = pgTable('modifiers', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  category: text('category').notNull().default('Other'), // ← NEW
+  type: modifierTypeEnum('type').notNull(),
+  required: boolean('required').notNull().default(false),
+  maxChoices: integer('max_choices'),
+  sortOrder: integer('sort_order').notNull().default(0), // ← NEW
 });
 
 export const modifierOptions = pgTable(
-  "modifier_options",
+  'modifier_options',
   {
-    id: serial("id").primaryKey(),
-    modifierId: integer("modifier_id")
+    id: serial('id').primaryKey(),
+    modifierId: integer('modifier_id')
       .notNull()
-      .references(() => modifiers.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    priceDelta: integer("price_delta").notNull().default(0),
-    isDefault: boolean("is_default").notNull().default(false),
+      .references(() => modifiers.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    priceDelta: integer('price_delta').notNull().default(0),
+    isDefault: boolean('is_default').notNull().default(false),
   },
-  (t) => [index("modifier_options_modifier_id_idx").on(t.modifierId)]
+  (t) => [index('modifier_options_modifier_id_idx').on(t.modifierId)],
 );
 
 // Item <-> Modifier junction (which modifiers belong to which item)
 export const itemModifiers = pgTable(
-  "item_modifiers",
+  'item_modifiers',
   {
-    itemId: integer("item_id")
+    itemId: integer('item_id')
       .notNull()
-      .references(() => items.id, { onDelete: "cascade" }),
-    modifierId: integer("modifier_id")
+      .references(() => items.id, { onDelete: 'cascade' }),
+    modifierId: integer('modifier_id')
       .notNull()
-      .references(() => modifiers.id, { onDelete: "cascade" }),
+      .references(() => modifiers.id, { onDelete: 'cascade' }),
   },
-  (t) => [primaryKey({ columns: [t.itemId, t.modifierId] })]
+  (t) => [primaryKey({ columns: [t.itemId, t.modifierId] })],
 );
 
 // ─── Promotions ───────────────────────────────────────────────────────────────
 
 export const promotions = pgTable(
-  "promotions",
+  'promotions',
   {
-    id: serial("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description").notNull().default(""),
-    type: promotionTypeEnum("type").notNull(),
-    value: integer("value").notNull(),
-    startAt: timestamp("start_at").notNull(),
-    endAt: timestamp("end_at").notNull(),
-    minOrderTotal: integer("min_order_total").notNull().default(0),
-    isActive: boolean("is_active").notNull().default(true),
-    promotionCode: text("promotion_code"),
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    type: promotionTypeEnum('type').notNull(),
+    value: integer('value').notNull(),
+    startAt: timestamp('start_at').notNull(),
+    endAt: timestamp('end_at').notNull(),
+    minOrderTotal: integer('min_order_total').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    promotionCode: text('promotion_code'),
   },
-  (t) => [index("promotions_is_active_idx").on(t.isActive)]
+  (t) => [index('promotions_is_active_idx').on(t.isActive)],
 );
 
 export const promotionItems = pgTable(
-  "promotion_items",
+  'promotion_items',
   {
-    id: serial("id").primaryKey(),
-    promotionId: integer("promotion_id")
+    id: serial('id').primaryKey(),
+    promotionId: integer('promotion_id')
       .notNull()
-      .references(() => promotions.id, { onDelete: "cascade" }),
-    itemId: integer("item_id")
+      .references(() => promotions.id, { onDelete: 'cascade' }),
+    itemId: integer('item_id')
       .notNull()
-      .references(() => items.id, { onDelete: "cascade" }),
+      .references(() => items.id, { onDelete: 'cascade' }),
   },
   (t) => [
-    index("promotion_items_promotion_id_idx").on(t.promotionId),
-    index("promotion_items_item_id_idx").on(t.itemId),
-  ]
+    index('promotion_items_promotion_id_idx').on(t.promotionId),
+    index('promotion_items_item_id_idx').on(t.itemId),
+  ],
 );
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
 export const orders = pgTable(
-  "orders",
+  'orders',
   {
-    id: serial("id").primaryKey(),
-    customerName: text("customer_name").notNull(),
-    customerPhone: text("customer_phone").notNull(),
-    estimatedReadyAt: timestamp("estimated_ready_at").notNull(),
-    status: orderStatusEnum("status").notNull().default("pending"),
-    subtotal: integer("subtotal").notNull(),
-    discountTotal: integer("discount_total").notNull().default(0),
-    taxTotal: integer("tax_total").notNull().default(0),
-    total: integer("total").notNull(),
-    stripePaymentIntentId: text("stripe_payment_intent_id"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    id: serial('id').primaryKey(),
+    customerName: text('customer_name').notNull(),
+    customerPhone: text('customer_phone').notNull(),
+    estimatedReadyAt: timestamp('estimated_ready_at').notNull(),
+    status: orderStatusEnum('status').notNull().default('pending'),
+    subtotal: integer('subtotal').notNull(),
+    discountTotal: integer('discount_total').notNull().default(0),
+    taxTotal: integer('tax_total').notNull().default(0),
+    total: integer('total').notNull(),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
-  (t) => [index("orders_status_idx").on(t.status)]
+  (t) => [index('orders_status_idx').on(t.status)],
 );
 
 export const orderItems = pgTable(
-  "order_items",
+  'order_items',
   {
-    id: serial("id").primaryKey(),
-    orderId: integer("order_id")
+    id: serial('id').primaryKey(),
+    orderId: integer('order_id')
       .notNull()
-      .references(() => orders.id, { onDelete: "cascade" }),
-    itemId: integer("item_id")
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    itemId: integer('item_id')
       .notNull()
       .references(() => items.id),
-    quantity: integer("quantity").notNull(),
-    unitPrice: integer("unit_price").notNull(),
-    lineSubtotal: integer("line_subtotal").notNull(),
-    lineDiscount: integer("line_discount").notNull().default(0),
-    lineTotal: integer("line_total").notNull(),
+    quantity: integer('quantity').notNull(),
+    unitPrice: integer('unit_price').notNull(),
+    lineSubtotal: integer('line_subtotal').notNull(),
+    lineDiscount: integer('line_discount').notNull().default(0),
+    lineTotal: integer('line_total').notNull(),
   },
-  (t) => [index("order_items_order_id_idx").on(t.orderId)]
+  (t) => [index('order_items_order_id_idx').on(t.orderId)],
 );
 
 export const orderItemModifiers = pgTable(
-  "order_item_modifiers",
+  'order_item_modifiers',
   {
-    id: serial("id").primaryKey(),
-    orderItemId: integer("order_item_id")
+    id: serial('id').primaryKey(),
+    orderItemId: integer('order_item_id')
       .notNull()
-      .references(() => orderItems.id, { onDelete: "cascade" }),
-    modifierOptionId: integer("modifier_option_id")
+      .references(() => orderItems.id, { onDelete: 'cascade' }),
+    modifierOptionId: integer('modifier_option_id')
       .notNull()
       .references(() => modifierOptions.id),
-    priceDelta: integer("price_delta").notNull().default(0),
+    priceDelta: integer('price_delta').notNull().default(0),
   },
-  (t) => [index("order_item_modifiers_order_item_id_idx").on(t.orderItemId)]
+  (t) => [index('order_item_modifiers_order_item_id_idx').on(t.orderItemId)],
 );
 
 // ─── Relations ────────────────────────────────────────────────────────────────
@@ -201,9 +207,15 @@ export const modifiersRelations = relations(modifiers, ({ many }) => ({
   itemModifiers: many(itemModifiers),
 }));
 
-export const modifierOptionsRelations = relations(modifierOptions, ({ one }) => ({
-  modifier: one(modifiers, { fields: [modifierOptions.modifierId], references: [modifiers.id] }),
-}));
+export const modifierOptionsRelations = relations(
+  modifierOptions,
+  ({ one }) => ({
+    modifier: one(modifiers, {
+      fields: [modifierOptions.modifierId],
+      references: [modifiers.id],
+    }),
+  }),
+);
 
 export const ordersRelations = relations(orders, ({ many }) => ({
   orderItems: many(orderItems),
@@ -215,10 +227,19 @@ export const orderItemsRelations = relations(orderItems, ({ one, many }) => ({
   modifiers: many(orderItemModifiers),
 }));
 
-export const orderItemModifiersRelations = relations(orderItemModifiers, ({ one }) => ({
-  orderItem: one(orderItems, { fields: [orderItemModifiers.orderItemId], references: [orderItems.id] }),
-  modifierOption: one(modifierOptions, { fields: [orderItemModifiers.modifierOptionId], references: [modifierOptions.id] }),
-}));
+export const orderItemModifiersRelations = relations(
+  orderItemModifiers,
+  ({ one }) => ({
+    orderItem: one(orderItems, {
+      fields: [orderItemModifiers.orderItemId],
+      references: [orderItems.id],
+    }),
+    modifierOption: one(modifierOptions, {
+      fields: [orderItemModifiers.modifierOptionId],
+      references: [modifierOptions.id],
+    }),
+  }),
+);
 
 export const promotionsRelations = relations(promotions, ({ many }) => ({
   promotionItems: many(promotionItems),
