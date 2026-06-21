@@ -1,0 +1,10 @@
+{
+  "name": "ordering-system-monorepo",
+  "private": true,
+  "scripts": {
+    "dev:web": "cd next-app && npm run dev",
+    "dev:mobile": "cd mobile-app && npx expo start",
+    "db:generate": "cd next-app && npm run db:generate",
+    "db:migrate": "cd next-app && npm run db:migrate"
+  }
+}
