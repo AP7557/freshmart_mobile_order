@@ -68,11 +68,11 @@ export const items = pgTable(
 export const modifiers = pgTable('modifiers', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
-  category: text('category').notNull().default('Other'), // ← NEW
+  category: text('category').notNull().default('Other'),
   type: modifierTypeEnum('type').notNull(),
   required: boolean('required').notNull().default(false),
   maxChoices: integer('max_choices'),
-  sortOrder: integer('sort_order').notNull().default(0), // ← NEW
+  sortOrder: integer('sort_order').notNull().default(0),
 });
 
 export const modifierOptions = pgTable(

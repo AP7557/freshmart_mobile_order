@@ -4,8 +4,6 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type ModifierOption = {
   id: number;
   name: string;
@@ -27,10 +25,8 @@ type Modifier = {
 type Item = {
   id: number;
   name: string;
-  modifiers: Array<{ modifierId: number; sortOrder: number }>;
+  modifiers?: Array<{ modifierId: number }>;
 };
-
-// ─── Zod schema ──────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
   'Bread / Base',
@@ -44,6 +40,19 @@ const CATEGORIES = [
   'Temperature',
   'Other',
 ] as const;
+
+const CATEGORY_COLOURS: Record<string, string> = {
+  'Bread / Base': 'bg-amber-100 text-amber-800',
+  Protein: 'bg-red-100 text-red-800',
+  Cheese: 'bg-yellow-100 text-yellow-800',
+  Vegetables: 'bg-green-100 text-green-800',
+  'Sauce / Dressing': 'bg-orange-100 text-orange-800',
+  'Spice Level': 'bg-rose-100 text-rose-800',
+  'Extras / Add-ons': 'bg-purple-100 text-purple-800',
+  Size: 'bg-blue-100 text-blue-800',
+  Temperature: 'bg-cyan-100 text-cyan-800',
+  Other: 'bg-gray-100 text-gray-700',
+};
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -64,30 +73,11 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-// ─── Category badge colours ───────────────────────────────────────────────────
-
-const CATEGORY_COLOURS: Record<string, string> = {
-  'Bread / Base': 'bg-amber-100 text-amber-800',
-  Protein: 'bg-red-100 text-red-800',
-  Cheese: 'bg-yellow-100 text-yellow-800',
-  Vegetables: 'bg-green-100 text-green-800',
-  'Sauce / Dressing': 'bg-orange-100 text-orange-800',
-  'Spice Level': 'bg-rose-100 text-rose-800',
-  'Extras / Add-ons': 'bg-purple-100 text-purple-800',
-  Size: 'bg-blue-100 text-blue-800',
-  Temperature: 'bg-cyan-100 text-cyan-800',
-  Other: 'bg-gray-100 text-gray-700',
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function centsToDisplay(cents: number) {
   if (cents === 0) return 'Free';
   const sign = cents > 0 ? '+' : '-';
   return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
-
-// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ModifiersPage() {
   const [modifiers, setModifiers] = useState<Modifier[]>([]);
@@ -96,9 +86,10 @@ export default function ModifiersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Modifier | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [assignTarget, setAssignTarget] = useState<number | null>(null); // modifier id being assigned
+  const [assignTarget, setAssignTarget] = useState<number | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [search, setSearch] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const {
     register,
@@ -117,14 +108,11 @@ export default function ModifiersPage() {
       options: [{ name: '', priceDelta: 0, isDefault: false }],
     },
   });
-
   const { fields, append, remove } = useFieldArray({
     control,
     name: 'options',
   });
   const watchedType = watch('type');
-
-  // ── Data fetching ──────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,8 +123,6 @@ export default function ModifiersPage() {
       ]);
       const modJson = await modRes.json();
       const itemJson = await itemRes.json();
-
-      // Build full modifier objects with their options
       const mods: Modifier[] = (modJson.data?.modifiers ?? []).map(
         (m: Modifier) => ({
           ...m,
@@ -148,17 +134,11 @@ export default function ModifiersPage() {
       );
       mods.sort(
         (a, b) =>
-          a.sortOrder - b.sortOrder || a.category.localeCompare(b.category),
+          (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+          a.category.localeCompare(b.category),
       );
       setModifiers(mods);
-
-      // Items with their modifier assignments
-      setItems(
-        (itemJson.data ?? []).map((item: Item) => ({
-          ...item,
-          modifiers: item.modifiers ?? [],
-        })),
-      );
+      setItems(itemJson.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -168,38 +148,39 @@ export default function ModifiersPage() {
     load();
   }, [load]);
 
-  // ── Form submit ────────────────────────────────────────────────────────────
-
   async function onSubmit(data: FormData) {
+    setFormError(null);
     const url = editing
       ? `/api/admin/modifiers/${editing.id}`
       : '/api/admin/modifiers';
     const method = editing ? 'PATCH' : 'POST';
+    console.log({ url, method, data });
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (res.ok) {
-      reset();
-      setEditing(null);
-      setShowForm(false);
-      load();
-    } else {
-      const json = await res.json();
-      alert(json.error ?? 'Save failed');
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      setFormError(json.error ?? `Server error ${res.status}`);
+      return;
     }
+    reset();
+    setEditing(null);
+    setShowForm(false);
+    load();
   }
 
   function startEdit(mod: Modifier) {
     setEditing(mod);
+    setFormError(null);
     reset({
       name: mod.name,
       category: mod.category as FormData['category'],
       type: mod.type,
       required: mod.required,
       maxChoices: mod.maxChoices ?? undefined,
-      sortOrder: mod.sortOrder,
+      sortOrder: mod.sortOrder ?? 0,
       options: mod.options.map((o) => ({
         name: o.name,
         priceDelta: o.priceDelta,
@@ -216,8 +197,6 @@ export default function ModifiersPage() {
     load();
   }
 
-  // ── Item assignment ────────────────────────────────────────────────────────
-
   async function toggleItemAssignment(
     modifierId: number,
     itemId: number,
@@ -231,13 +210,13 @@ export default function ModifiersPage() {
     load();
   }
 
-  // ── Reorder sort order ─────────────────────────────────────────────────────
-
   async function moveModifier(modifierId: number, direction: 'up' | 'down') {
     const mod = modifiers.find((m) => m.id === modifierId);
     if (!mod) return;
     const newOrder =
-      direction === 'up' ? Math.max(0, mod.sortOrder - 1) : mod.sortOrder + 1;
+      direction === 'up'
+        ? Math.max(0, (mod.sortOrder ?? 0) - 1)
+        : (mod.sortOrder ?? 0) + 1;
     await fetch(`/api/admin/modifiers/${modifierId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -246,13 +225,17 @@ export default function ModifiersPage() {
     load();
   }
 
-  // ── Filtered list ──────────────────────────────────────────────────────────
+  function cancelForm() {
+    reset();
+    setEditing(null);
+    setShowForm(false);
+    setFormError(null);
+  }
 
   const filtered = modifiers.filter((m) => {
-    const matchCategory =
-      filterCategory === 'All' || m.category === filterCategory;
+    const matchCat = filterCategory === 'All' || m.category === filterCategory;
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    return matchCategory && matchSearch;
+    return matchCat && matchSearch;
   });
 
   const grouped = CATEGORIES.reduce<Record<string, Modifier[]>>((acc, cat) => {
@@ -261,23 +244,8 @@ export default function ModifiersPage() {
     return acc;
   }, {});
 
-  const allCategories = ['All', ...CATEGORIES];
-
-  // ── Cancel form ────────────────────────────────────────────────────────────
-
-  function cancelForm() {
-    reset();
-    setEditing(null);
-    setShowForm(false);
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <div className='space-y-6'>
-      {/* Header */}
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
           <h1 className='text-2xl font-bold text-gray-900'>Modifier Steps</h1>
@@ -291,6 +259,7 @@ export default function ModifiersPage() {
             onClick={() => {
               setEditing(null);
               reset();
+              setFormError(null);
               setShowForm(true);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -301,7 +270,6 @@ export default function ModifiersPage() {
         )}
       </div>
 
-      {/* ── Form ─────────────────────────────────────────────────────────── */}
       {showForm && (
         <form
           onSubmit={handleSubmit(onSubmit)}
@@ -311,14 +279,19 @@ export default function ModifiersPage() {
             {editing ? `Editing: ${editing.name}` : 'New Modifier Step'}
           </h2>
 
-          {/* Row 1: name + category */}
+          {formError && (
+            <div className='bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700'>
+              <strong>Error:</strong> {formError}
+            </div>
+          )}
+
           <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Step Name *</span>
               <input
                 {...register('name')}
                 placeholder='e.g. "Choose your bread"'
-                className='input border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+                className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
               />
               {errors.name && (
                 <span className='text-red-500 text-xs'>
@@ -326,12 +299,11 @@ export default function ModifiersPage() {
                 </span>
               )}
             </label>
-
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Category *</span>
               <select
                 {...register('category')}
-                className='input border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
+                className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -342,38 +314,35 @@ export default function ModifiersPage() {
             </label>
           </div>
 
-          {/* Row 2: type + required + sort order */}
           <div className='grid grid-cols-1 sm:grid-cols-3 gap-4'>
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Selection Type</span>
               <select
                 {...register('type')}
-                className='input border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
+                className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
               >
                 <option value='single'>Pick one (e.g. bread type)</option>
                 <option value='multiple'>Pick multiple (e.g. toppings)</option>
               </select>
             </label>
-
             {watchedType === 'multiple' && (
               <label className='flex flex-col gap-1 text-sm'>
                 <span className='font-medium text-gray-700'>Max Choices</span>
                 <input
                   type='number'
                   {...register('maxChoices')}
-                  placeholder='Leave blank for unlimited'
-                  className='input border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  placeholder='Leave blank = unlimited'
+                  className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
                 />
               </label>
             )}
-
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Display Order</span>
               <input
                 type='number'
                 {...register('sortOrder')}
                 placeholder='0 = first'
-                className='input border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+                className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
               />
               <span className='text-xs text-gray-400'>
                 Lower = shown first to customer
@@ -381,7 +350,6 @@ export default function ModifiersPage() {
             </label>
           </div>
 
-          {/* Required checkbox */}
           <label className='flex items-center gap-2 text-sm cursor-pointer'>
             <input
               type='checkbox'
@@ -394,14 +362,10 @@ export default function ModifiersPage() {
             </span>
           </label>
 
-          {/* Options */}
           <div className='space-y-3'>
             <div className='flex items-center justify-between'>
               <p className='text-sm font-medium text-gray-700'>
-                Options{' '}
-                <span className='text-gray-400 font-normal'>
-                  ({fields.length} {fields.length === 1 ? 'option' : 'options'})
-                </span>
+                Options ({fields.length})
               </p>
               <button
                 type='button'
@@ -413,16 +377,13 @@ export default function ModifiersPage() {
                 + Add Option
               </button>
             </div>
-
             <div className='bg-gray-50 rounded-xl p-4 space-y-2'>
-              {/* Header row */}
               <div className='grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1 pb-1 border-b border-gray-200'>
                 <span className='col-span-5'>Option Name</span>
                 <span className='col-span-4'>Price Adjustment (cents)</span>
                 <span className='col-span-2 text-center'>Default?</span>
                 <span className='col-span-1' />
               </div>
-
               {fields.map((field, i) => (
                 <div
                   key={field.id}
@@ -430,7 +391,7 @@ export default function ModifiersPage() {
                 >
                   <input
                     {...register(`options.${i}.name`)}
-                    placeholder='e.g. Wheat Roll, American Cheese…'
+                    placeholder='e.g. Wheat Roll…'
                     className='col-span-5 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
                   />
                   <div className='col-span-4 relative'>
@@ -456,8 +417,7 @@ export default function ModifiersPage() {
                       <button
                         type='button'
                         onClick={() => remove(i)}
-                        className='text-red-400 hover:text-red-600 text-lg leading-none transition'
-                        title='Remove option'
+                        className='text-red-400 hover:text-red-600 text-lg leading-none'
                       >
                         ×
                       </button>
@@ -467,21 +427,20 @@ export default function ModifiersPage() {
                   </div>
                 </div>
               ))}
-
               {errors.options && (
                 <p className='text-red-500 text-xs mt-1'>
-                  {errors.options.message ?? 'Fix option errors above'}
+                  {typeof errors.options.message === 'string'
+                    ? errors.options.message
+                    : 'Fix option errors above'}
                 </p>
               )}
             </div>
-
             <p className='text-xs text-gray-400'>
-              Price adjustment: use positive cents for upcharge (+50 = +$0.50),
-              negative for discount (-25 = -$0.25), 0 for included.
+              Positive = upcharge (+50¢), negative = discount (-25¢), 0 =
+              included.
             </p>
           </div>
 
-          {/* Actions */}
           <div className='flex gap-3 pt-2 border-t border-gray-100'>
             <button
               type='submit'
@@ -505,7 +464,6 @@ export default function ModifiersPage() {
         </form>
       )}
 
-      {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div className='flex flex-wrap items-center gap-3'>
         <input
           type='search'
@@ -515,15 +473,11 @@ export default function ModifiersPage() {
           className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-48'
         />
         <div className='flex flex-wrap gap-1.5'>
-          {allCategories.map((cat) => (
+          {['All', ...CATEGORIES].map((cat) => (
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition ${
-                filterCategory === cat
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition ${filterCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >
               {cat}
             </button>
@@ -531,27 +485,6 @@ export default function ModifiersPage() {
         </div>
       </div>
 
-      {/* ── Summary bar ────────────────────────────────────────────────── */}
-      {!loading && (
-        <div className='flex flex-wrap gap-4 text-sm text-gray-500'>
-          <span>{modifiers.length} total modifier steps</span>
-          <span>·</span>
-          {CATEGORIES.map((cat) => {
-            const count = modifiers.filter((m) => m.category === cat).length;
-            if (!count) return null;
-            return (
-              <span key={cat}>
-                <span
-                  className={`inline-block w-2 h-2 rounded-full mr-1 ${CATEGORY_COLOURS[cat]?.replace(/text-\S+/g, '').replace('bg-', 'bg-')}`}
-                />
-                {cat}: {count}
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Modifier list grouped by category ──────────────────────────── */}
       {loading ? (
         <div className='space-y-3'>
           {[1, 2, 3].map((i) => (
@@ -584,7 +517,6 @@ export default function ModifiersPage() {
                 </span>
                 <div className='flex-1 border-t border-gray-100' />
               </div>
-
               <div className='space-y-3'>
                 {mods.map((mod, idx) => {
                   const isExpanded = expandedId === mod.id;
@@ -593,40 +525,31 @@ export default function ModifiersPage() {
                       item.modifiers?.some((m) => m.modifierId === mod.id),
                     )
                     .map((item) => item.id);
-
                   return (
                     <div
                       key={mod.id}
                       className='bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden'
                     >
-                      {/* Modifier header row */}
                       <div className='flex items-center gap-3 px-4 py-3'>
-                        {/* Sort order controls */}
                         <div className='flex flex-col gap-0.5'>
                           <button
                             onClick={() => moveModifier(mod.id, 'up')}
                             disabled={idx === 0}
-                            className='text-gray-300 hover:text-gray-600 disabled:opacity-20 transition text-xs leading-none'
-                            title='Move up'
+                            className='text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs leading-none'
                           >
                             ▲
                           </button>
                           <button
                             onClick={() => moveModifier(mod.id, 'down')}
                             disabled={idx === mods.length - 1}
-                            className='text-gray-300 hover:text-gray-600 disabled:opacity-20 transition text-xs leading-none'
-                            title='Move down'
+                            className='text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs leading-none'
                           >
                             ▼
                           </button>
                         </div>
-
-                        {/* Step number pill */}
                         <span className='w-7 h-7 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center shrink-0'>
-                          {mod.sortOrder + 1}
+                          {(mod.sortOrder ?? 0) + 1}
                         </span>
-
-                        {/* Name + meta */}
                         <div className='flex-1 min-w-0'>
                           <div className='flex flex-wrap items-center gap-2'>
                             <span className='font-semibold text-gray-900 text-sm'>
@@ -638,11 +561,7 @@ export default function ModifiersPage() {
                               </span>
                             )}
                             <span
-                              className={`px-1.5 py-0.5 text-xs rounded font-medium ${
-                                mod.type === 'single'
-                                  ? 'bg-blue-50 text-blue-700'
-                                  : 'bg-indigo-50 text-indigo-700'
-                              }`}
+                              className={`px-1.5 py-0.5 text-xs rounded font-medium ${mod.type === 'single' ? 'bg-blue-50 text-blue-700' : 'bg-indigo-50 text-indigo-700'}`}
                             >
                               {mod.type === 'single'
                                 ? 'Pick one'
@@ -665,27 +584,18 @@ export default function ModifiersPage() {
                             )}
                           </p>
                         </div>
-
-                        {/* Item assignment count */}
                         <button
                           onClick={() =>
                             setAssignTarget(
                               assignTarget === mod.id ? null : mod.id,
                             )
                           }
-                          className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium ${
-                            assignedItemIds.length > 0
-                              ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                              : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                          }`}
-                          title='Assign to menu items'
+                          className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium ${assignedItemIds.length > 0 ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
                         >
                           {assignedItemIds.length > 0
                             ? `${assignedItemIds.length} item${assignedItemIds.length > 1 ? 's' : ''}`
                             : 'Assign items'}
                         </button>
-
-                        {/* Expand options */}
                         <button
                           onClick={() =>
                             setExpandedId(isExpanded ? null : mod.id)
@@ -694,8 +604,6 @@ export default function ModifiersPage() {
                         >
                           {isExpanded ? '▲ Hide' : '▼ Options'}
                         </button>
-
-                        {/* Edit / delete */}
                         <div className='flex gap-1'>
                           <button
                             onClick={() => startEdit(mod)}
@@ -711,8 +619,6 @@ export default function ModifiersPage() {
                           </button>
                         </div>
                       </div>
-
-                      {/* Expanded options list */}
                       {isExpanded && (
                         <div className='border-t border-gray-100 bg-gray-50 px-4 py-3'>
                           <p className='text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2'>
@@ -722,11 +628,7 @@ export default function ModifiersPage() {
                             {mod.options.map((opt) => (
                               <span
                                 key={opt.id}
-                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
-                                  opt.isDefault
-                                    ? 'bg-blue-50 border-blue-200 text-blue-800 font-medium'
-                                    : 'bg-white border-gray-200 text-gray-700'
-                                }`}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${opt.isDefault ? 'bg-blue-50 border-blue-200 text-blue-800 font-medium' : 'bg-white border-gray-200 text-gray-700'}`}
                               >
                                 {opt.isDefault && (
                                   <span className='text-blue-500 text-xs'>
@@ -746,17 +648,15 @@ export default function ModifiersPage() {
                           </div>
                         </div>
                       )}
-
-                      {/* Item assignment panel */}
                       {assignTarget === mod.id && (
                         <div className='border-t border-gray-100 bg-blue-50 px-4 py-3'>
                           <p className='text-xs font-semibold text-gray-600 mb-2'>
-                            Assign to menu items — this step will appear when
+                            Assign to menu items — this step appears when
                             customer selects these items:
                           </p>
                           {items.length === 0 ? (
                             <p className='text-xs text-gray-400'>
-                              No menu items yet. Add items first.
+                              No menu items yet.
                             </p>
                           ) : (
                             <div className='flex flex-wrap gap-2'>
@@ -774,11 +674,7 @@ export default function ModifiersPage() {
                                         assigned,
                                       )
                                     }
-                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                                      assigned
-                                        ? 'bg-blue-600 border-blue-600 text-white'
-                                        : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'
-                                    }`}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${assigned ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'}`}
                                   >
                                     {assigned ? '✓ ' : ''}
                                     {item.name}
@@ -798,22 +694,17 @@ export default function ModifiersPage() {
         </div>
       )}
 
-      {/* ── Customer preview strip ──────────────────────────────────────── */}
       {modifiers.length > 0 && (
         <div className='mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5'>
           <p className='text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3'>
-            📱 Customer Step Preview (mobile order flow)
+            📱 Customer Step Preview
           </p>
           <div className='flex flex-wrap items-center gap-2'>
             {modifiers.map((m, i) => (
               <div key={m.id} className='flex items-center gap-2'>
                 <div className='flex flex-col items-center'>
                   <div
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                      m.required
-                        ? 'bg-white border-blue-300 text-blue-800 shadow-sm'
-                        : 'bg-white border-gray-200 text-gray-600'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${m.required ? 'bg-white border-blue-300 text-blue-800 shadow-sm' : 'bg-white border-gray-200 text-gray-600'}`}
                   >
                     <span className='text-gray-400 mr-1'>{i + 1}.</span>
                     {m.name}
