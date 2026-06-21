@@ -15,10 +15,13 @@ import { relations } from 'drizzle-orm';
 
 export const modifierTypeEnum = pgEnum('modifier_type', ['single', 'multiple']);
 export const promotionTypeEnum = pgEnum('promotion_type', [
-  'percent',
-  'fixed',
-  'item',
+  'percent', // e.g. 10% off whole order or specific items
+  'fixed', // e.g. $5 off order
+  'item', // legacy item-level discount
+  'buy_x_get_y', // buy X of triggerItems → Y of rewardItems free/discounted
+  'bundle', // select items from a bundle set → discount applies
 ]);
+
 export const orderStatusEnum = pgEnum('order_status', [
   'pending',
   'paid',
@@ -112,12 +115,18 @@ export const promotions = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
     type: promotionTypeEnum('type').notNull(),
-    value: integer('value').notNull(),
+    value: integer('value').notNull(), // percent (0-100) or cents
     startAt: timestamp('start_at').notNull(),
     endAt: timestamp('end_at').notNull(),
     minOrderTotal: integer('min_order_total').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
-    promotionCode: text('promotion_code'),
+    promotionCode: text('promotion_code'), // null = auto-apply
+    // BuyXGetY / bundle fields
+    triggerQty: integer('trigger_qty').notNull().default(1),
+    rewardQty: integer('reward_qty').notNull().default(1),
+    triggerItemIds: integer('trigger_item_ids').array().notNull().default([]),
+    rewardItemIds: integer('reward_item_ids').array().notNull().default([]),
+    appliesTo: text('applies_to').notNull().default('order'),
   },
   (t) => [index('promotions_is_active_idx').on(t.isActive)],
 );
