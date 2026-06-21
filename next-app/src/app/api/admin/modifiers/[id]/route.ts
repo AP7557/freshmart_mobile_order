@@ -10,7 +10,7 @@ import { ok, err, handleRouteError } from "@/lib/api-response";
 const CATEGORIES = [
   "Bread / Base","Protein","Cheese","Vegetables",
   "Sauce / Dressing","Spice Level","Extras / Add-ons",
-  "Size","Temperature","Other",
+  "Temperature","Other",
 ] as const;
 
 const PatchSchema = z.object({

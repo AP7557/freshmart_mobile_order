@@ -10,7 +10,7 @@ type ModifierOption = {
   priceDelta: number;
   isDefault: boolean;
 };
-
+type AssignedItem = { id: number; name: string };
 type Modifier = {
   id: number;
   name: string;
@@ -20,13 +20,9 @@ type Modifier = {
   maxChoices: number | null;
   sortOrder: number;
   options: ModifierOption[];
+  assignedItems: AssignedItem[];
 };
-
-type Item = {
-  id: number;
-  name: string;
-  modifiers?: Array<{ modifierId: number }>;
-};
+type Item = { id: number; name: string };
 
 const CATEGORIES = [
   'Bread / Base',
@@ -36,7 +32,6 @@ const CATEGORIES = [
   'Sauce / Dressing',
   'Spice Level',
   'Extras / Add-ons',
-  'Size',
   'Temperature',
   'Other',
 ] as const;
@@ -49,7 +44,6 @@ const CATEGORY_COLOURS: Record<string, string> = {
   'Sauce / Dressing': 'bg-orange-100 text-orange-800',
   'Spice Level': 'bg-rose-100 text-rose-800',
   'Extras / Add-ons': 'bg-purple-100 text-purple-800',
-  Size: 'bg-blue-100 text-blue-800',
   Temperature: 'bg-cyan-100 text-cyan-800',
   Other: 'bg-gray-100 text-gray-700',
 };
@@ -73,10 +67,9 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-function centsToDisplay(cents: number) {
-  if (cents === 0) return 'Free';
-  const sign = cents > 0 ? '+' : '-';
-  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+function centsToDisplay(c: number) {
+  if (c === 0) return 'Free';
+  return `${c > 0 ? '+' : '-'}$${(Math.abs(c) / 100).toFixed(2)}`;
 }
 
 export default function ModifiersPage() {
@@ -87,7 +80,7 @@ export default function ModifiersPage() {
   const [editing, setEditing] = useState<Modifier | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [assignTarget, setAssignTarget] = useState<number | null>(null);
-  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [filterCat, setFilterCat] = useState('All');
   const [search, setSearch] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -117,16 +110,17 @@ export default function ModifiersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [modRes, itemRes] = await Promise.all([
+      const [mRes, iRes] = await Promise.all([
         fetch('/api/admin/modifiers'),
         fetch('/api/admin/items'),
       ]);
-      const modJson = await modRes.json();
-      const itemJson = await itemRes.json();
-      const mods: Modifier[] = (modJson.data?.modifiers ?? []).map(
+      const mJson = await mRes.json();
+      const iJson = await iRes.json();
+      const mods: Modifier[] = (mJson.data?.modifiers ?? []).map(
         (m: Modifier) => ({
           ...m,
-          options: (modJson.data?.options ?? []).filter(
+          assignedItems: m.assignedItems ?? [],
+          options: (mJson.data?.options ?? []).filter(
             (o: ModifierOption & { modifierId: number }) =>
               o.modifierId === m.id,
           ),
@@ -138,7 +132,7 @@ export default function ModifiersPage() {
           a.category.localeCompare(b.category),
       );
       setModifiers(mods);
-      setItems(itemJson.data ?? []);
+      setItems(iJson.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -154,7 +148,6 @@ export default function ModifiersPage() {
       ? `/api/admin/modifiers/${editing.id}`
       : '/api/admin/modifiers';
     const method = editing ? 'PATCH' : 'POST';
-    console.log({ url, method, data });
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -197,24 +190,24 @@ export default function ModifiersPage() {
     load();
   }
 
-  async function toggleItemAssignment(
+  async function toggleAssignment(
     modifierId: number,
     itemId: number,
-    currentlyAssigned: boolean,
+    assigned: boolean,
   ) {
     await fetch(`/api/admin/modifiers/${modifierId}/items`, {
-      method: currentlyAssigned ? 'DELETE' : 'POST',
+      method: assigned ? 'DELETE' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ itemId }),
     });
     load();
   }
 
-  async function moveModifier(modifierId: number, direction: 'up' | 'down') {
+  async function moveModifier(modifierId: number, dir: 'up' | 'down') {
     const mod = modifiers.find((m) => m.id === modifierId);
     if (!mod) return;
     const newOrder =
-      direction === 'up'
+      dir === 'up'
         ? Math.max(0, (mod.sortOrder ?? 0) - 1)
         : (mod.sortOrder ?? 0) + 1;
     await fetch(`/api/admin/modifiers/${modifierId}`, {
@@ -232,20 +225,25 @@ export default function ModifiersPage() {
     setFormError(null);
   }
 
-  const filtered = modifiers.filter((m) => {
-    const matchCat = filterCategory === 'All' || m.category === filterCategory;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
-
+  const filtered = modifiers.filter(
+    (m) =>
+      (filterCat === 'All' || m.category === filterCat) &&
+      m.name.toLowerCase().includes(search.toLowerCase()),
+  );
   const grouped = CATEGORIES.reduce<Record<string, Modifier[]>>((acc, cat) => {
     const list = filtered.filter((m) => m.category === cat);
     if (list.length) acc[cat] = list;
     return acc;
   }, {});
 
+  // ── unassigned modifier count for the warning banner
+  const unassigned = modifiers.filter(
+    (m) => m.assignedItems.length === 0,
+  ).length;
+
   return (
     <div className='space-y-6'>
+      {/* Header */}
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
           <h1 className='text-2xl font-bold text-gray-900'>Modifier Steps</h1>
@@ -270,6 +268,25 @@ export default function ModifiersPage() {
         )}
       </div>
 
+      {/* Unassigned warning */}
+      {!loading && unassigned > 0 && (
+        <div className='flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800'>
+          <span className='text-lg leading-none mt-0.5'>⚠️</span>
+          <div>
+            <strong>
+              {unassigned} modifier step{unassigned > 1 ? 's' : ''} not assigned
+              to any item.
+            </strong>
+            <span className='text-amber-700'>
+              {' '}
+              They won&apos;t appear in the customer flow until you assign them
+              to at least one menu item.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Form ── */}
       {showForm && (
         <form
           onSubmit={handleSubmit(onSubmit)}
@@ -278,13 +295,11 @@ export default function ModifiersPage() {
           <h2 className='text-lg font-semibold text-gray-900'>
             {editing ? `Editing: ${editing.name}` : 'New Modifier Step'}
           </h2>
-
           {formError && (
             <div className='bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700'>
               <strong>Error:</strong> {formError}
             </div>
           )}
-
           <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Step Name *</span>
@@ -313,7 +328,6 @@ export default function ModifiersPage() {
               </select>
             </label>
           </div>
-
           <div className='grid grid-cols-1 sm:grid-cols-3 gap-4'>
             <label className='flex flex-col gap-1 text-sm'>
               <span className='font-medium text-gray-700'>Selection Type</span>
@@ -321,8 +335,8 @@ export default function ModifiersPage() {
                 {...register('type')}
                 className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
               >
-                <option value='single'>Pick one (e.g. bread type)</option>
-                <option value='multiple'>Pick multiple (e.g. toppings)</option>
+                <option value='single'>Pick one</option>
+                <option value='multiple'>Pick multiple</option>
               </select>
             </label>
             {watchedType === 'multiple' && (
@@ -331,7 +345,7 @@ export default function ModifiersPage() {
                 <input
                   type='number'
                   {...register('maxChoices')}
-                  placeholder='Leave blank = unlimited'
+                  placeholder='blank = unlimited'
                   className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
                 />
               </label>
@@ -344,12 +358,9 @@ export default function ModifiersPage() {
                 placeholder='0 = first'
                 className='border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
               />
-              <span className='text-xs text-gray-400'>
-                Lower = shown first to customer
-              </span>
+              <span className='text-xs text-gray-400'>Lower = shown first</span>
             </label>
           </div>
-
           <label className='flex items-center gap-2 text-sm cursor-pointer'>
             <input
               type='checkbox'
@@ -361,7 +372,6 @@ export default function ModifiersPage() {
               checkout
             </span>
           </label>
-
           <div className='space-y-3'>
             <div className='flex items-center justify-between'>
               <p className='text-sm font-medium text-gray-700'>
@@ -380,7 +390,7 @@ export default function ModifiersPage() {
             <div className='bg-gray-50 rounded-xl p-4 space-y-2'>
               <div className='grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1 pb-1 border-b border-gray-200'>
                 <span className='col-span-5'>Option Name</span>
-                <span className='col-span-4'>Price Adjustment (cents)</span>
+                <span className='col-span-4'>Price (cents)</span>
                 <span className='col-span-2 text-center'>Default?</span>
                 <span className='col-span-1' />
               </div>
@@ -391,7 +401,7 @@ export default function ModifiersPage() {
                 >
                   <input
                     {...register(`options.${i}.name`)}
-                    placeholder='e.g. Wheat Roll…'
+                    placeholder='e.g. Wheat Roll'
                     className='col-span-5 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
                   />
                   <div className='col-span-4 relative'>
@@ -427,20 +437,12 @@ export default function ModifiersPage() {
                   </div>
                 </div>
               ))}
-              {errors.options && (
-                <p className='text-red-500 text-xs mt-1'>
-                  {typeof errors.options.message === 'string'
-                    ? errors.options.message
-                    : 'Fix option errors above'}
-                </p>
-              )}
             </div>
             <p className='text-xs text-gray-400'>
               Positive = upcharge (+50¢), negative = discount (-25¢), 0 =
               included.
             </p>
           </div>
-
           <div className='flex gap-3 pt-2 border-t border-gray-100'>
             <button
               type='submit'
@@ -464,6 +466,7 @@ export default function ModifiersPage() {
         </form>
       )}
 
+      {/* ── Filter bar ── */}
       <div className='flex flex-wrap items-center gap-3'>
         <input
           type='search'
@@ -476,8 +479,8 @@ export default function ModifiersPage() {
           {['All', ...CATEGORIES].map((cat) => (
             <button
               key={cat}
-              onClick={() => setFilterCategory(cat)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition ${filterCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              onClick={() => setFilterCat(cat)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition ${filterCat === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >
               {cat}
             </button>
@@ -485,6 +488,7 @@ export default function ModifiersPage() {
         </div>
       </div>
 
+      {/* ── List ── */}
       {loading ? (
         <div className='space-y-3'>
           {[1, 2, 3].map((i) => (
@@ -498,9 +502,6 @@ export default function ModifiersPage() {
         <div className='text-center py-16 text-gray-400'>
           <p className='text-4xl mb-3'>🥪</p>
           <p className='font-medium text-gray-600'>No modifier steps yet</p>
-          <p className='text-sm mt-1'>
-            Create steps like "Choose your bread", "Add toppings", etc.
-          </p>
         </div>
       ) : (
         <div className='space-y-8'>
@@ -520,18 +521,19 @@ export default function ModifiersPage() {
               <div className='space-y-3'>
                 {mods.map((mod, idx) => {
                   const isExpanded = expandedId === mod.id;
-                  const assignedItemIds = items
-                    .filter((item) =>
-                      item.modifiers?.some((m) => m.modifierId === mod.id),
-                    )
-                    .map((item) => item.id);
+                  const isAssigning = assignTarget === mod.id;
+                  const assigned = mod.assignedItems ?? [];
+                  const assignedIds = assigned.map((a) => a.id);
+
                   return (
                     <div
                       key={mod.id}
                       className='bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden'
                     >
-                      <div className='flex items-center gap-3 px-4 py-3'>
-                        <div className='flex flex-col gap-0.5'>
+                      {/* ── Main row ── */}
+                      <div className='flex items-start gap-3 px-4 py-3'>
+                        {/* Sort arrows */}
+                        <div className='flex flex-col gap-0.5 mt-1 shrink-0'>
                           <button
                             onClick={() => moveModifier(mod.id, 'up')}
                             disabled={idx === 0}
@@ -547,10 +549,15 @@ export default function ModifiersPage() {
                             ▼
                           </button>
                         </div>
-                        <span className='w-7 h-7 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center shrink-0'>
+
+                        {/* Step number */}
+                        <span className='w-7 h-7 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5'>
                           {(mod.sortOrder ?? 0) + 1}
                         </span>
-                        <div className='flex-1 min-w-0'>
+
+                        {/* Content — takes up all remaining space */}
+                        <div className='flex-1 min-w-0 space-y-2'>
+                          {/* Name + type badges */}
                           <div className='flex flex-wrap items-center gap-2'>
                             <span className='font-semibold text-gray-900 text-sm'>
                               {mod.name}
@@ -568,14 +575,59 @@ export default function ModifiersPage() {
                                 : `Pick ${mod.maxChoices ? `up to ${mod.maxChoices}` : 'multiple'}`}
                             </span>
                           </div>
-                          <p className='text-xs text-gray-400 mt-0.5'>
+
+                          {/* ── Assigned items row — THE KEY ADDITION ── */}
+                          <div className='flex flex-wrap items-center gap-1.5'>
+                            {assigned.length === 0 ? (
+                              <span className='inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-xs text-amber-700 font-medium'>
+                                ⚠ Not assigned to any item
+                              </span>
+                            ) : (
+                              <>
+                                <span className='text-xs text-gray-400 shrink-0'>
+                                  On items:
+                                </span>
+                                {assigned.map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className='inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-xs text-green-800 font-medium'
+                                  >
+                                    ✓ {a.name}
+                                    {/* click × to remove just this assignment inline */}
+                                    <button
+                                      type='button'
+                                      onClick={() =>
+                                        toggleAssignment(mod.id, a.id, true)
+                                      }
+                                      className='ml-0.5 text-green-500 hover:text-red-500 transition leading-none'
+                                      title={`Remove from ${a.name}`}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </>
+                            )}
+                            {/* Assign button — always visible */}
+                            <button
+                              onClick={() =>
+                                setAssignTarget(isAssigning ? null : mod.id)
+                              }
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition ${isAssigning ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'}`}
+                            >
+                              {isAssigning ? '▲ Done' : '+ Assign item'}
+                            </button>
+                          </div>
+
+                          {/* Options summary line */}
+                          <p className='text-xs text-gray-400'>
                             {mod.options.length} option
                             {mod.options.length !== 1 ? 's' : ''}
                             {mod.options.filter((o) => o.isDefault).length >
                               0 && (
                               <>
                                 {' '}
-                                · defaults:{' '}
+                                · default:{' '}
                                 {mod.options
                                   .filter((o) => o.isDefault)
                                   .map((o) => o.name)
@@ -584,27 +636,17 @@ export default function ModifiersPage() {
                             )}
                           </p>
                         </div>
-                        <button
-                          onClick={() =>
-                            setAssignTarget(
-                              assignTarget === mod.id ? null : mod.id,
-                            )
-                          }
-                          className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium ${assignedItemIds.length > 0 ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
-                        >
-                          {assignedItemIds.length > 0
-                            ? `${assignedItemIds.length} item${assignedItemIds.length > 1 ? 's' : ''}`
-                            : 'Assign items'}
-                        </button>
-                        <button
-                          onClick={() =>
-                            setExpandedId(isExpanded ? null : mod.id)
-                          }
-                          className='text-gray-400 hover:text-gray-600 text-xs transition px-2 py-1 rounded hover:bg-gray-50'
-                        >
-                          {isExpanded ? '▲ Hide' : '▼ Options'}
-                        </button>
-                        <div className='flex gap-1'>
+
+                        {/* Right-side actions */}
+                        <div className='flex items-center gap-1 shrink-0'>
+                          <button
+                            onClick={() =>
+                              setExpandedId(isExpanded ? null : mod.id)
+                            }
+                            className='text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-50 transition'
+                          >
+                            {isExpanded ? '▲ Hide' : '▼ Options'}
+                          </button>
                           <button
                             onClick={() => startEdit(mod)}
                             className='text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition'
@@ -619,6 +661,8 @@ export default function ModifiersPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* ── Expanded options ── */}
                       {isExpanded && (
                         <div className='border-t border-gray-100 bg-gray-50 px-4 py-3'>
                           <p className='text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2'>
@@ -631,14 +675,12 @@ export default function ModifiersPage() {
                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${opt.isDefault ? 'bg-blue-50 border-blue-200 text-blue-800 font-medium' : 'bg-white border-gray-200 text-gray-700'}`}
                               >
                                 {opt.isDefault && (
-                                  <span className='text-blue-500 text-xs'>
-                                    ★
-                                  </span>
+                                  <span className='text-blue-500'>★</span>
                                 )}
                                 {opt.name}
                                 {opt.priceDelta !== 0 && (
                                   <span
-                                    className={`ml-0.5 font-medium ${opt.priceDelta > 0 ? 'text-green-600' : 'text-orange-600'}`}
+                                    className={`font-medium ${opt.priceDelta > 0 ? 'text-green-600' : 'text-orange-600'}`}
                                   >
                                     {centsToDisplay(opt.priceDelta)}
                                   </span>
@@ -648,35 +690,31 @@ export default function ModifiersPage() {
                           </div>
                         </div>
                       )}
-                      {assignTarget === mod.id && (
-                        <div className='border-t border-gray-100 bg-blue-50 px-4 py-3'>
+
+                      {/* ── Item assignment panel ── */}
+                      {isAssigning && (
+                        <div className='border-t border-blue-100 bg-blue-50 px-4 py-3'>
                           <p className='text-xs font-semibold text-gray-600 mb-2'>
-                            Assign to menu items — this step appears when
-                            customer selects these items:
+                            Toggle items — this step shows up when customer
+                            picks these items:
                           </p>
                           {items.length === 0 ? (
                             <p className='text-xs text-gray-400'>
-                              No menu items yet.
+                              No menu items yet. Add items first.
                             </p>
                           ) : (
                             <div className='flex flex-wrap gap-2'>
                               {items.map((item) => {
-                                const assigned = assignedItemIds.includes(
-                                  item.id,
-                                );
+                                const isOn = assignedIds.includes(item.id);
                                 return (
                                   <button
                                     key={item.id}
                                     onClick={() =>
-                                      toggleItemAssignment(
-                                        mod.id,
-                                        item.id,
-                                        assigned,
-                                      )
+                                      toggleAssignment(mod.id, item.id, isOn)
                                     }
-                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${assigned ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'}`}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${isOn ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'}`}
                                   >
-                                    {assigned ? '✓ ' : ''}
+                                    {isOn ? '✓ ' : ''}
                                     {item.name}
                                   </button>
                                 );
@@ -694,6 +732,7 @@ export default function ModifiersPage() {
         </div>
       )}
 
+      {/* ── Customer flow preview ── */}
       {modifiers.length > 0 && (
         <div className='mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5'>
           <p className='text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3'>
@@ -709,9 +748,9 @@ export default function ModifiersPage() {
                     <span className='text-gray-400 mr-1'>{i + 1}.</span>
                     {m.name}
                   </div>
-                  {m.required && (
-                    <span className='text-red-500 text-xs mt-0.5'>
-                      required
+                  {m.assignedItems.length === 0 && (
+                    <span className='text-amber-500 text-xs mt-0.5'>
+                      unassigned
                     </span>
                   )}
                 </div>
