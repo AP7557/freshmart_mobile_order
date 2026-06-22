@@ -6,7 +6,7 @@ import {
   items,
   modifierOptions,
 } from '@/db/schema';
-import { inArray, eq } from 'drizzle-orm';
+import { inArray, eq, asc } from 'drizzle-orm';
 import { requireRole } from '@/lib/auth';
 import { ok, handleRouteError } from '@/lib/api-response';
 
@@ -16,7 +16,8 @@ export async function GET() {
     const activeOrders = await db
       .select()
       .from(orders)
-      .where(inArray(orders.status, ['paid', 'preparing', 'ready']));
+      .where(inArray(orders.status, ['paid', 'preparing', 'ready']))
+      .orderBy(asc(orders.createdAt));
 
     const enriched = await Promise.all(
       activeOrders.map(async (order) => {
