@@ -6,7 +6,13 @@
     "orientation": "portrait",
     "scheme": "freshmartorder",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yourcompany.freshmartorder"
@@ -17,6 +23,9 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.yourcompany.freshmartorder"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",

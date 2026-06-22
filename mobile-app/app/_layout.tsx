@@ -13,13 +13,13 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <StripeProvider publishableKey={STRIPE_KEY} merchantIdentifier="merchant.com.yourcompany.freshmartorder">
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerStyle: { backgroundColor: "#fff" }, headerTintColor: "#111827", headerShadowVisible: false }}>
-          <Stack.Screen name="index"                    options={{ title: "Today's Deals" }} />
-          <Stack.Screen name="menu"                     options={{ title: "Menu" }} />
-          <Stack.Screen name="item/[id]"                options={{ title: "Customize" }} />
-          <Stack.Screen name="cart"                     options={{ title: "Your Cart" }} />
-          <Stack.Screen name="checkout"                 options={{ title: "Checkout" }} />
-          <Stack.Screen name="order-confirmation/[id]"  options={{ title: "Order Confirmed", headerBackVisible: false }} />
+        <Stack screenOptions={{ headerStyle: { backgroundColor: "#ffffff" }, headerTintColor: "#111827", headerShadowVisible: false, contentStyle: { backgroundColor: "#f9fafb" } }}>
+          <Stack.Screen name="index"                   options={{ title: "Today's Deals" }} />
+          <Stack.Screen name="menu"                    options={{ title: "Menu" }} />
+          <Stack.Screen name="item/[id]"               options={{ title: "Customize" }} />
+          <Stack.Screen name="cart"                    options={{ title: "Your Cart" }} />
+          <Stack.Screen name="checkout"                options={{ title: "Checkout" }} />
+          <Stack.Screen name="order-confirmation/[id]" options={{ title: "Order Confirmed", headerBackVisible: false }} />
         </Stack>
       </StripeProvider>
     </QueryClientProvider>
