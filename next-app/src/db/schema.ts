@@ -23,7 +23,6 @@ export const promotionTypeEnum = pgEnum('promotion_type', [
 ]);
 
 export const orderStatusEnum = pgEnum('order_status', [
-  'pending',
   'paid',
   'preparing',
   'ready',
@@ -157,7 +156,7 @@ export const orders = pgTable(
     customerName: text('customer_name').notNull(),
     customerPhone: text('customer_phone').notNull(),
     estimatedReadyAt: timestamp('estimated_ready_at').notNull(),
-    status: orderStatusEnum('status').notNull().default('pending'),
+    status: orderStatusEnum('status').notNull().default('preparing'),
     subtotal: integer('subtotal').notNull(),
     discountTotal: integer('discount_total').notNull().default(0),
     taxTotal: integer('tax_total').notNull().default(0),

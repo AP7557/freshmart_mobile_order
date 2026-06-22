@@ -29,7 +29,6 @@ interface OrderDetails {
   lines: OrderLine[];
 }
 const STATUS_ICON: Record<string, string> = {
-  pending: '⏳',
   paid: '✅',
   preparing: '👨‍🍳',
   ready: '🔔',
@@ -37,7 +36,6 @@ const STATUS_ICON: Record<string, string> = {
   cancelled: '❌',
 };
 const STATUS_COLOR: Record<string, string> = {
-  pending: '#f59e0b',
   paid: '#3b82f6',
   preparing: '#8b5cf6',
   ready: '#10b981',

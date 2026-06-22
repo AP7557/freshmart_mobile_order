@@ -1,16 +1,22 @@
-import { db } from "@/db";
-import { orders, orderItems, orderItemModifiers, items, modifierOptions } from "@/db/schema";
-import { inArray, eq } from "drizzle-orm";
-import { requireRole } from "@/lib/auth";
-import { ok, handleRouteError } from "@/lib/api-response";
+import { db } from '@/db';
+import {
+  orders,
+  orderItems,
+  orderItemModifiers,
+  items,
+  modifierOptions,
+} from '@/db/schema';
+import { inArray, eq } from 'drizzle-orm';
+import { requireRole } from '@/lib/auth';
+import { ok, handleRouteError } from '@/lib/api-response';
 
 export async function GET() {
   try {
-    await requireRole("kitchen");
+    await requireRole('kitchen');
     const activeOrders = await db
       .select()
       .from(orders)
-      .where(inArray(orders.status, ["paid", "preparing", "ready"]));
+      .where(inArray(orders.status, ['paid', 'preparing', 'ready']));
 
     const enriched = await Promise.all(
       activeOrders.map(async (order) => {
@@ -32,7 +38,10 @@ export async function GET() {
             optionName: modifierOptions.name,
           })
           .from(orderItemModifiers)
-          .innerJoin(modifierOptions, eq(orderItemModifiers.modifierOptionId, modifierOptions.id));
+          .innerJoin(
+            modifierOptions,
+            eq(orderItemModifiers.modifierOptionId, modifierOptions.id),
+          );
 
         return {
           ...order,
@@ -43,9 +52,11 @@ export async function GET() {
               .map((m) => m.optionName),
           })),
         };
-      })
+      }),
     );
 
     return ok(enriched);
-  } catch (e) { return handleRouteError(e); }
+  } catch (e) {
+    return handleRouteError(e);
+  }
 }

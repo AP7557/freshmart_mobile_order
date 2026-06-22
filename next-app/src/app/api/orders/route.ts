@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         customerName,
         customerPhone,
         estimatedReadyAt,
-        status: "pending",
+        status: "preparing",
         subtotal: pricing.subtotal,
         discountTotal: pricing.discountTotal,
         taxTotal: pricing.taxTotal,
