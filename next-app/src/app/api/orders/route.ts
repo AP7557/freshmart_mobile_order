@@ -1,21 +1,32 @@
-import { NextRequest } from "next/server";
-import { z } from "zod";
-import { db } from "@/db";
-import { orders, orderItems, orderItemModifiers, items, modifierOptions } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import { calculatePricing, calculateEstimatedReadyAt, resolveUnitPrice } from "@/lib/pricing";
-import { stripe } from "@/lib/stripe";
-import { ok, err, handleRouteError } from "@/lib/api-response";
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { db } from '@/db';
+import {
+  orders,
+  orderItems,
+  orderItemModifiers,
+  items,
+  modifierOptions,
+} from '@/db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import {
+  calculatePricing,
+  calculateEstimatedReadyAt,
+  resolveUnitPrice,
+} from '@/lib/pricing';
+import { stripe } from '@/lib/stripe';
+import { ok, err, handleRouteError } from '@/lib/api-response';
 
 const OrderLineSchema = z.object({
   itemId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(50),
+  // Accept both field names for compatibility
   modifierOptionIds: z.array(z.number().int().positive()).default([]),
 });
 
 const CreateOrderSchema = z.object({
   customerName: z.string().min(1).max(100).trim(),
-  customerPhone: z.string().regex(/^\+?[1-9]\d{7,14}$/, "Invalid phone number"),
+  customerPhone: z.string().min(10).max(15),
   lines: z.array(OrderLineSchema).min(1).max(30),
   promoCode: z.string().optional(),
 });
@@ -30,20 +41,28 @@ export async function POST(req: NextRequest) {
 
     // Fetch item base prices from DB (never trust client prices)
     const itemIds = [...new Set(lines.map((l) => l.itemId))];
-    const dbItems = await db.select().from(items).where(inArray(items.id, itemIds));
+    const dbItems = await db
+      .select()
+      .from(items)
+      .where(inArray(items.id, itemIds));
     const itemMap = new Map(dbItems.map((i) => [i.id, i]));
 
     for (const line of lines) {
-      if (!itemMap.has(line.itemId)) return err(`Item ${line.itemId} not found`);
-      if (!itemMap.get(line.itemId)!.isActive) return err(`Item ${line.itemId} is unavailable`);
+      if (!itemMap.has(line.itemId))
+        return err(`Item ${line.itemId} not found`);
+      if (!itemMap.get(line.itemId)!.isActive)
+        return err(`Item ${line.itemId} is unavailable`);
     }
 
     const cartLines = await Promise.all(
       lines.map(async (line) => {
         const item = itemMap.get(line.itemId)!;
-        const unitPrice = await resolveUnitPrice(item.basePrice, line.modifierOptionIds);
+        const unitPrice = await resolveUnitPrice(
+          item.basePrice,
+          line.modifierOptionIds,
+        );
         return { ...line, unitPrice };
-      })
+      }),
     );
 
     const pricing = await calculatePricing(cartLines, promoCode);
@@ -56,7 +75,7 @@ export async function POST(req: NextRequest) {
         customerName,
         customerPhone,
         estimatedReadyAt,
-        status: "preparing",
+        status: 'preparing',
         subtotal: pricing.subtotal,
         discountTotal: pricing.discountTotal,
         taxTotal: pricing.taxTotal,
@@ -67,7 +86,7 @@ export async function POST(req: NextRequest) {
     // Insert order items + modifiers
     for (const line of cartLines) {
       const lineSubtotal = line.unitPrice * line.quantity;
-      const lineDiscount = pricing.lineDiscounts[line.itemId] ?? 0;
+      const lineDiscount = pricing.lineDiscounts?.[line.itemId] ?? 0;
       const lineTotal = lineSubtotal - lineDiscount;
 
       const [oi] = await db
@@ -94,17 +113,26 @@ export async function POST(req: NextRequest) {
             orderItemId: oi.id,
             modifierOptionId: opt.id,
             priceDelta: opt.priceDelta,
-          }))
+          })),
         );
       }
     }
 
-    // Create Stripe PaymentIntent
+    // Create Stripe PaymentIntent — Dahlia 2026-05-27
+    // automatic_payment_methods with allow_redirects:"never" keeps PaymentSheet redirect-free on mobile
     const paymentIntent = await stripe.paymentIntents.create({
       amount: pricing.total,
-      currency: "usd",
-      metadata: { orderId: String(order.id) },
-      automatic_payment_methods: { enabled: true },
+      currency: 'usd',
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: 'never',
+      },
+      metadata: {
+        orderId: String(order.id),
+        customerName,
+        customerPhone,
+      },
+      description: `Freshmart Order #${order.id}`,
     });
 
     await db
@@ -115,7 +143,6 @@ export async function POST(req: NextRequest) {
     return ok({
       orderId: order.id,
       clientSecret: paymentIntent.client_secret,
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
       pricing,
       estimatedReadyAt,
     });

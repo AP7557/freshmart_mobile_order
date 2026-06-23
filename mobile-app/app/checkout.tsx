@@ -2,10 +2,13 @@ import { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
@@ -13,6 +16,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useCartStore } from '../store/cart';
 import { apiFetch } from '../lib/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { OrderConfirmation } from '../types';
 
 function fmt(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -21,8 +25,13 @@ function fmt(cents: number) {
 export default function CheckoutScreen() {
   const router = useRouter();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const { items, subtotal, discountTotal, taxTotal, clearCart } =
-    useCartStore();
+
+  const items = useCartStore((s) => s.items);
+  const subtotal = useCartStore((s) => s.subtotal());
+  const discountTotal = useCartStore((s) => s.discountTotal());
+  const taxTotal = useCartStore((s) => s.taxTotal());
+  const total = useCartStore((s) => s.total());
+  const clearCart = useCartStore((s) => s.clearCart);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -51,29 +60,24 @@ export default function CheckoutScreen() {
     mutationFn: async () => {
       if (!validate()) throw new Error('validation');
 
-      // Step 1 — create order draft on the server (server recalculates totals)
-      const orderRes = await apiFetch('/api/orders', {
+      // Step 1 — create order + PaymentIntent on the server in one call
+      // Server field names: "lines" and "modifierOptionIds"
+      const orderRes = await apiFetch<OrderConfirmation>('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           customerName: name.trim(),
           customerPhone: phone.replace(/[^\d]/g, ''),
-          items: items.map((i) => ({
+          lines: items.map((i) => ({
             itemId: i.item.id,
             quantity: i.quantity,
-            selectedModifierOptionIds: i.selectedModifierOptionIds,
+            modifierOptionIds: i.selectedModifierOptionIds,
           })),
         }),
       });
-      const orderId: number = orderRes.data.id;
 
-      // Step 2 — fetch PaymentIntent client secret (Dahlia 2026-05-27)
-      const piRes = await apiFetch('/api/orders/payment-intent', {
-        method: 'POST',
-        body: JSON.stringify({ orderId }),
-      });
-      const { clientSecret } = piRes.data;
+      const { orderId, clientSecret } = orderRes.data;
 
-      // Step 3 — initialise PaymentSheet
+      // Step 2 — init PaymentSheet (publishableKey is already in StripeProvider in _layout.tsx)
       const { error: initError } = await initPaymentSheet({
         merchantDisplayName: 'Freshmart Edison',
         paymentIntentClientSecret: clientSecret,
@@ -81,7 +85,6 @@ export default function CheckoutScreen() {
           name: name.trim(),
           phone: phone.replace(/[^\d]/g, ''),
         },
-        // Visual theming
         appearance: {
           colors: {
             primary: '#1a6b3c',
@@ -93,26 +96,21 @@ export default function CheckoutScreen() {
             secondaryText: '#4a7a5a',
             placeholderText: '#9ab8a4',
           },
-          shapes: {
-            borderRadius: 12,
-            borderWidth: 1.0,
-          },
+          shapes: { borderRadius: 12, borderWidth: 1.0 },
         },
-        // Native wallets — Apple Pay / Google Pay
         applePay: { merchantCountryCode: 'US' },
         googlePay: { merchantCountryCode: 'US', testEnv: __DEV__ },
       });
 
       if (initError) throw new Error(initError.message);
 
-      // Step 4 — present the sheet
+      // Step 3 — present sheet
       const { error: presentError } = await presentPaymentSheet();
       if (presentError) {
-        if (presentError.code === 'Canceled') return null; // user dismissed
+        if (presentError.code === 'Canceled') return null;
         throw new Error(presentError.message);
       }
 
-      // Step 5 — success
       clearCart();
       return orderId;
     },
@@ -121,10 +119,8 @@ export default function CheckoutScreen() {
       if (orderId) router.replace(`/order-confirmation/${orderId}`);
     },
 
-    onError: (err: Error) => {
-      if (err.message !== 'validation') {
-        Alert.alert('Payment failed', err.message);
-      }
+    onError: (e: Error) => {
+      if (e.message !== 'validation') Alert.alert('Payment failed', e.message);
     },
   });
 
@@ -148,24 +144,26 @@ export default function CheckoutScreen() {
             <Text style={styles.sectionTitle}>Your Info</Text>
 
             <Text style={styles.label}>Name</Text>
-            <input
+            <TextInput
               style={styles.input}
               placeholder='Jane Smith'
+              placeholderTextColor='#9ab8a4'
               value={name}
-              onChange={(e: any) =>
-                setName(e.nativeEvent?.text ?? e.target?.value ?? '')
-              }
+              onChangeText={setName}
+              autoCapitalize='words'
+              returnKeyType='next'
             />
             {!!nameErr && <Text style={styles.error}>{nameErr}</Text>}
 
             <Text style={[styles.label, { marginTop: 12 }]}>Phone Number</Text>
-            <input
+            <TextInput
               style={styles.input}
               placeholder='(555) 000-0000'
+              placeholderTextColor='#9ab8a4'
               value={phone}
-              onChange={(e: any) =>
-                setPhone(e.nativeEvent?.text ?? e.target?.value ?? '')
-              }
+              onChangeText={setPhone}
+              keyboardType='phone-pad'
+              returnKeyType='done'
             />
             {!!phoneErr && <Text style={styles.error}>{phoneErr}</Text>}
           </View>
@@ -175,9 +173,9 @@ export default function CheckoutScreen() {
             <Text style={styles.sectionTitle}>Order Summary</Text>
 
             {items.map((item) => (
-              <View key={item.id} style={styles.row}>
+              <View key={item.cartId} style={styles.row}>
                 <Text style={styles.rowLabel} numberOfLines={1}>
-                  {item.quantity}× {item.name}
+                  {item.quantity}× {item.item.name}
                 </Text>
                 <Text style={styles.rowValue}>{fmt(item.lineTotal)}</Text>
               </View>
@@ -226,18 +224,18 @@ export default function CheckoutScreen() {
 
         {/* ── Pay button ── */}
         <View style={styles.footer}>
-          <button
-            style={{
-              ...styles.payButton,
-              opacity: checkout.isPending ? 0.7 : 1,
-            }}
+          <TouchableOpacity
+            style={[styles.payButton, checkout.isPending && { opacity: 0.7 }]}
             disabled={checkout.isPending}
-            onClick={() => checkout.mutate()}
+            onPress={() => checkout.mutate()}
+            activeOpacity={0.8}
           >
-            <Text style={styles.payButtonText}>
-              {checkout.isPending ? 'Processing…' : `Pay ${fmt(total)}`}
-            </Text>
-          </button>
+            {checkout.isPending ? (
+              <ActivityIndicator color='#ffffff' />
+            ) : (
+              <Text style={styles.payButtonText}>Pay {fmt(total)}</Text>
+            )}
+          </TouchableOpacity>
           <Text style={styles.caption}>
             Secured by Stripe · Ready in ~30 min
           </Text>
@@ -247,7 +245,7 @@ export default function CheckoutScreen() {
   );
 }
 
-const styles: Record<string, any> = {
+const styles = {
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
@@ -260,11 +258,16 @@ const styles: Record<string, any> = {
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: '#0d3d20',
     marginBottom: 12,
   },
-  label: { fontSize: 13, fontWeight: '600', color: '#4a7a5a', marginBottom: 4 },
+  label: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#4a7a5a',
+    marginBottom: 4,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#d1ead8',
@@ -276,12 +279,12 @@ const styles: Record<string, any> = {
   },
   error: { fontSize: 12, color: '#c0392b', marginTop: 4 },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
     marginBottom: 4,
   },
   rowLabel: { fontSize: 14, color: '#4a7a5a', flex: 1, marginRight: 8 },
-  rowValue: { fontSize: 14, color: '#0d3d20', fontWeight: '500' },
+  rowValue: { fontSize: 14, color: '#0d3d20', fontWeight: '500' as const },
   divider: { height: 1, backgroundColor: '#d1ead8', marginVertical: 8 },
   footer: {
     padding: 20,
@@ -294,17 +297,14 @@ const styles: Record<string, any> = {
     backgroundColor: '#1a6b3c',
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    border: 'none',
-    cursor: 'pointer',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
-  payButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  payButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' as const },
   caption: {
     fontSize: 12,
     color: '#9ab8a4',
-    textAlign: 'center',
+    textAlign: 'center' as const,
     marginTop: 8,
   },
 };

@@ -6,6 +6,7 @@ export interface Item {
   imageUrl: string | null;
   isActive: boolean;
 }
+
 export interface MenuModifier {
   modifierId: number;
   modifierName: string;
@@ -16,6 +17,7 @@ export interface MenuModifier {
   category: string;
   itemId: number;
 }
+
 export interface ModifierOption {
   id: number;
   modifierId: number;
@@ -23,7 +25,9 @@ export interface ModifierOption {
   priceDelta: number;
   isDefault: boolean;
 }
+
 export type PromoType = 'percent' | 'fixed' | 'item' | 'buy_x_get_y' | 'bundle';
+
 export interface Promotion {
   id: number;
   name: string;
@@ -41,17 +45,20 @@ export interface Promotion {
   rewardItemIds: number[];
   appliesTo: string;
 }
+
 export interface CartItem {
   cartId: string;
   item: Item;
   quantity: number;
   selectedModifierOptionIds: number[];
   unitPrice: number;
+  lineTotal: number; // cents — (unitPrice × quantity), including modifier deltas
+  lineDiscount: number; // cents — discount applied to this line
 }
+
 export interface OrderConfirmation {
   orderId: number;
   clientSecret: string;
-  publishableKey: string;
   pricing: {
     subtotal: number;
     discountTotal: number;
@@ -60,6 +67,7 @@ export interface OrderConfirmation {
   };
   estimatedReadyAt: string;
 }
+
 export interface MenuData {
   items: Item[];
   modifiers: MenuModifier[];
