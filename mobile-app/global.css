@@ -4,73 +4,43 @@
 
 @layer base {
   :root {
-    /* Freshmart light mode — white surface, forest-green primary */
+    /* Freshmart light — white bg, forest-green primary */
     --background:   0 0% 100%;
     --foreground:   140 60% 10%;
-
     --card:         0 0% 100%;
     --card-foreground: 140 60% 10%;
-
-    --popover:      0 0% 100%;
-    --popover-foreground: 140 60% 10%;
-
-    /* primary = dark forest green #1a6b3c */
     --primary:      145 61% 26%;
     --primary-foreground: 0 0% 100%;
-
-    /* secondary = pale lime wash */
     --secondary:    95 52% 93%;
     --secondary-foreground: 145 61% 18%;
-
     --muted:        95 20% 96%;
     --muted-foreground: 140 20% 45%;
-
-    /* accent = lime green #7dc242 */
     --accent:       91 50% 51%;
     --accent-foreground: 0 0% 100%;
-
     --destructive:  0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-
     --border:       140 20% 88%;
     --input:        140 20% 88%;
     --ring:         145 61% 26%;
-
-    --radius: 0.625rem;
   }
 
   .dark {
     --background:   140 30% 6%;
     --foreground:   95 40% 95%;
-
     --card:         140 25% 9%;
     --card-foreground: 95 40% 95%;
-
-    --popover:      140 25% 9%;
-    --popover-foreground: 95 40% 95%;
-
     --primary:      91 50% 51%;
     --primary-foreground: 140 60% 8%;
-
     --secondary:    140 25% 14%;
     --secondary-foreground: 95 40% 90%;
-
     --muted:        140 20% 14%;
     --muted-foreground: 140 15% 60%;
-
     --accent:       145 61% 38%;
     --accent-foreground: 0 0% 100%;
-
     --destructive:  0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-
     --border:       140 20% 18%;
     --input:        140 20% 18%;
     --ring:         91 50% 51%;
   }
-}
-
-@layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans antialiased; }
 }
