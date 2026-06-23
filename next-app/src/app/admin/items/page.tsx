@@ -3,20 +3,25 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const schema = z.object({
   name: z.string().min(1),
   description: z.string().default(''),
   basePrice: z.preprocess(
     (v) => (v === '' || v == null ? undefined : Number(v)),
-    z.number().int().min(0),
+    z.number({ error: 'Price required' }).int().min(0),
   ),
-  imageUrl: z.union([z.url(), z.literal('')]).default(''),
+  imageUrl: z.union([z.string().url(), z.literal('')]).default(''),
   isActive: z.boolean().default(true),
 });
-
-type FormData = z.output<typeof schema>;
-type Item = FormData & { id: number; createdAt: string };
+type ItemFormData = z.output<typeof schema>;
+type Item = ItemFormData & { id: number; createdAt: string };
 
 export default function ItemsPage() {
   const [items, setItems] = useState<Item[]>([]);
@@ -24,6 +29,7 @@ export default function ItemsPage() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const {
     register,
@@ -32,7 +38,7 @@ export default function ItemsPage() {
     formState: { errors, isSubmitting },
     setValue,
     watch,
-  } = useForm<FormData>({
+  } = useForm<ItemFormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: { isActive: true, description: '', imageUrl: '' },
   });
@@ -45,19 +51,23 @@ export default function ItemsPage() {
     setItems(json.data ?? []);
     setLoading(false);
   }
-
   useEffect(() => {
     load();
   }, []);
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit(data: ItemFormData) {
+    setFormError(null);
     const url = editing ? `/api/admin/items/${editing.id}` : '/api/admin/items';
-    const method = editing ? 'PATCH' : 'POST';
-    await fetch(url, {
-      method,
+    const res = await fetch(url, {
+      method: editing ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const j = await res.json();
+      setFormError(j.error ?? 'Save failed');
+      return;
+    }
     reset();
     setEditing(null);
     setShowForm(false);
@@ -73,6 +83,7 @@ export default function ItemsPage() {
   function startEdit(item: Item) {
     setEditing(item);
     reset(item);
+    setFormError(null);
     setShowForm(true);
   }
 
@@ -81,7 +92,6 @@ export default function ItemsPage() {
     if (!file) return;
     setUploading(true);
     try {
-      // ✅ No name collision — browser's FormData used directly here
       const form = new window.FormData();
       form.append('file', file);
       const res = await fetch('/api/admin/upload', {
@@ -94,150 +104,179 @@ export default function ItemsPage() {
         return;
       }
       setValue('imageUrl', json.data.url, { shouldValidate: true });
-    } catch {
-      alert('Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }
   }
 
-  // JSX below is unchanged — just replace FormData → ItemFormData in the type annotations above
   return (
-    <div>
-      <div className='flex items-center justify-between mb-6'>
+    <div className='space-y-6'>
+      <div className='flex items-center justify-between'>
         <h1 className='text-2xl font-bold'>Items</h1>
-        <button
+        <Button
           onClick={() => {
             setEditing(null);
+            setFormError(null);
             reset({ isActive: true, description: '', imageUrl: '' });
             setShowForm(true);
           }}
-          className='px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm'
         >
           + Add Item
-        </button>
+        </Button>
       </div>
 
       {showForm && (
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className='bg-white p-6 rounded-xl shadow mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4'
-        >
-          <h2 className='col-span-full text-lg font-semibold'>
-            {editing ? 'Edit Item' : 'New Item'}
-          </h2>
-          <label className='flex flex-col gap-1 text-sm'>
-            Name *
-            <input {...register('name')} className='input' />
-            {errors.name && (
-              <span className='text-red-500 text-xs'>
-                {errors.name.message}
-              </span>
-            )}
-          </label>
-          <label className='flex flex-col gap-1 text-sm'>
-            Price (cents) *
-            <input type='number' {...register('basePrice')} className='input' />
-            {errors.basePrice && (
-              <span className='text-red-500 text-xs'>
-                {errors.basePrice.message}
-              </span>
-            )}
-          </label>
-          <label className='flex flex-col gap-1 text-sm col-span-full'>
-            Description
-            <textarea {...register('description')} rows={3} className='input' />
-          </label>
-          <label className='flex flex-col gap-1 text-sm'>
-            Image
-            <input
-              type='file'
-              accept='image/jpeg,image/png,image/webp,image/avif'
-              onChange={handleFileChange}
-              disabled={uploading}
-              className='input'
-            />
-            {uploading && (
-              <span className='text-xs text-gray-500'>Uploading…</span>
-            )}
-            {watchedImageUrl && (
-              <img
-                src={watchedImageUrl}
-                alt='Preview'
-                className='mt-2 w-24 h-24 object-cover rounded-lg border'
-              />
-            )}
-            <input type='hidden' {...register('imageUrl')} />
-          </label>
-          <label className='flex items-center gap-2 text-sm self-end'>
-            <input type='checkbox' {...register('isActive')} />
-            Active
-          </label>
-          <div className='col-span-full flex gap-3'>
-            <button
-              type='submit'
-              disabled={isSubmitting}
-              className='px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50'
+        <Card>
+          <CardHeader>
+            <CardTitle>{editing ? 'Edit Item' : 'New Item'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={handleSubmit(onSubmit)}
+              className='grid grid-cols-1 sm:grid-cols-2 gap-4'
             >
-              {isSubmitting ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type='button'
-              onClick={() => setShowForm(false)}
-              className='px-4 py-2 border rounded-lg text-sm'
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+              {formError && (
+                <div className='col-span-full'>
+                  <Alert variant='destructive'>
+                    <AlertDescription>{formError}</AlertDescription>
+                  </Alert>
+                </div>
+              )}
+              <div className='flex flex-col gap-1.5'>
+                <Label htmlFor='name'>Name *</Label>
+                <Input
+                  id='name'
+                  {...register('name')}
+                  aria-invalid={!!errors.name}
+                />
+                {errors.name && (
+                  <p className='text-xs text-destructive'>
+                    {errors.name.message}
+                  </p>
+                )}
+              </div>
+              <div className='flex flex-col gap-1.5'>
+                <Label htmlFor='basePrice'>Price (cents) *</Label>
+                <Input
+                  id='basePrice'
+                  type='number'
+                  {...register('basePrice')}
+                  aria-invalid={!!errors.basePrice}
+                />
+                {errors.basePrice && (
+                  <p className='text-xs text-destructive'>
+                    {errors.basePrice.message}
+                  </p>
+                )}
+              </div>
+              <div className='flex flex-col gap-1.5 col-span-full'>
+                <Label htmlFor='description'>Description</Label>
+                <textarea
+                  id='description'
+                  {...register('description')}
+                  rows={3}
+                  className='w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none'
+                />
+              </div>
+              <div className='flex flex-col gap-1.5'>
+                <Label htmlFor='imageFile'>Image</Label>
+                <Input
+                  id='imageFile'
+                  type='file'
+                  accept='image/jpeg,image/png,image/webp'
+                  onChange={handleFileChange}
+                  disabled={uploading}
+                />
+                {uploading && (
+                  <p className='text-xs text-muted-foreground'>Uploading…</p>
+                )}
+                {watchedImageUrl && (
+                  <img
+                    src={watchedImageUrl}
+                    alt='Preview'
+                    className='mt-2 w-24 h-24 object-cover rounded-lg border'
+                  />
+                )}
+                <input type='hidden' {...register('imageUrl')} />
+              </div>
+              <div className='flex items-center gap-2 self-end pb-1'>
+                <input
+                  id='isActive'
+                  type='checkbox'
+                  {...register('isActive')}
+                  className='w-4 h-4 accent-primary'
+                />
+                <Label htmlFor='isActive'>Active</Label>
+              </div>
+              <div className='col-span-full flex gap-3 pt-2 border-t border-border'>
+                <Button type='submit' disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving…' : 'Save'}
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {loading ? (
-        <p className='text-gray-500'>Loading…</p>
-      ) : (
-        <div className='bg-white rounded-xl shadow overflow-hidden'>
-          <table className='w-full text-sm'>
-            <thead className='bg-gray-50 text-left'>
-              <tr>
-                <th className='px-4 py-3 font-medium'>Name</th>
-                <th className='px-4 py-3 font-medium'>Price</th>
-                <th className='px-4 py-3 font-medium'>Status</th>
-                <th className='px-4 py-3 font-medium'>Actions</th>
-              </tr>
-            </thead>
-            <tbody className='divide-y divide-gray-100'>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td className='px-4 py-3'>{item.name}</td>
-                  <td className='px-4 py-3'>
-                    ${(item.basePrice / 100).toFixed(2)}
-                  </td>
-                  <td className='px-4 py-3'>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
-                    >
-                      {item.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className='px-4 py-3 flex gap-2'>
-                    <button
-                      onClick={() => startEdit(item)}
-                      className='text-blue-600 hover:underline'
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteItem(item.id)}
-                      className='text-red-600 hover:underline'
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className='space-y-2'>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className='h-12 bg-muted rounded-xl animate-pulse' />
+          ))}
         </div>
+      ) : (
+        <Card>
+          <CardContent className='p-0'>
+            <table className='w-full text-sm'>
+              <thead className='bg-muted/50 text-left'>
+                <tr>
+                  <th className='px-4 py-3 font-medium'>Name</th>
+                  <th className='px-4 py-3 font-medium'>Price</th>
+                  <th className='px-4 py-3 font-medium'>Status</th>
+                  <th className='px-4 py-3 font-medium'>Actions</th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-border'>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className='px-4 py-3 font-medium'>{item.name}</td>
+                    <td className='px-4 py-3'>
+                      ${(item.basePrice / 100).toFixed(2)}
+                    </td>
+                    <td className='px-4 py-3'>
+                      <Badge variant={item.isActive ? 'default' : 'outline'}>
+                        {item.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </td>
+                    <td className='px-4 py-3 flex gap-2'>
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        onClick={() => startEdit(item)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='destructive'
+                        onClick={() => deleteItem(item.id)}
+                      >
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

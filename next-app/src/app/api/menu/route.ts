@@ -1,7 +1,13 @@
-import { db } from "@/db";
-import { items, modifiers, modifierOptions, itemModifiers, promotions } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { ok, handleRouteError } from "@/lib/api-response";
+import { db } from '@/db';
+import {
+  items,
+  modifiers,
+  modifierOptions,
+  itemModifiers,
+  promotions,
+} from '@/db/schema';
+import { eq, and, lte, gte } from 'drizzle-orm';
+import { ok, handleRouteError } from '@/lib/api-response';
 
 export async function GET() {
   try {
@@ -10,6 +16,8 @@ export async function GET() {
       .from(items)
       .where(eq(items.isActive, true));
 
+    // Flat join — one row per (modifier, item) assignment.
+    // Matches MenuModifier interface exactly.
     const allModifiers = await db
       .select({
         modifierId: modifiers.id,
@@ -17,6 +25,8 @@ export async function GET() {
         modifierType: modifiers.type,
         required: modifiers.required,
         maxChoices: modifiers.maxChoices,
+        sortOrder: modifiers.sortOrder, // ← was missing
+        category: modifiers.category, // ← was missing
         itemId: itemModifiers.itemId,
       })
       .from(modifiers)
@@ -24,17 +34,25 @@ export async function GET() {
 
     const allOptions = await db.select().from(modifierOptions);
 
+    // Filter active promos whose date window includes right now
     const now = new Date();
     const activePromos = await db
       .select()
       .from(promotions)
       .where(
         and(
-          eq(promotions.isActive, true)
-        )
+          eq(promotions.isActive, true),
+          lte(promotions.startAt, now), // started already
+          gte(promotions.endAt, now), // not yet expired
+        ),
       );
 
-    return ok({ items: allItems, modifiers: allModifiers, modifierOptions: allOptions, promotions: activePromos });
+    return ok({
+      items: allItems,
+      modifiers: allModifiers,
+      modifierOptions: allOptions,
+      promotions: activePromos,
+    });
   } catch (e) {
     return handleRouteError(e);
   }
