@@ -20,7 +20,7 @@ function PromoBanner({ promo }: { promo: Promotion }) {
   return (
     <Card className='mr-4 w-72 bg-fm-dark border-0'>
       <CardContent className='p-4'>
-        <Badge variant='lime' className='mb-2 self-start'>
+        <Badge variant='default' className='mb-2 self-start'>
           DEAL
         </Badge>
         <Text className='text-white text-lg font-bold leading-tight mb-1'>

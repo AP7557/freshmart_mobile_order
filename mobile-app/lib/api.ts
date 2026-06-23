@@ -1,14 +1,15 @@
 const BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
-export async function apiFetch<T>(
+export async function apiFetch<T = unknown>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
-  const json = await res.json();
-  if (!res.ok || !json.success)
-    throw new Error(json.error ?? `Request failed: ${res.status}`);
-  return json.data as T;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
 }

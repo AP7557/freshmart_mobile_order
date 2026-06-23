@@ -49,7 +49,7 @@ export default function CheckoutScreen() {
   const checkout = useMutation({
     mutationFn: async () => {
       if (!validate()) throw new Error('validation');
-      const orderRes = await apiFetch('/api/orders', {
+      const orderRes = await apiFetch<{ data: { id: number } }>('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           customerName: name.trim(),
@@ -62,10 +62,13 @@ export default function CheckoutScreen() {
         }),
       });
       const orderId: number = orderRes.data.id;
-      const piRes = await apiFetch('/api/orders/payment-intent', {
-        method: 'POST',
-        body: JSON.stringify({ orderId }),
-      });
+      const piRes = await apiFetch<{ data: { clientSecret: string } }>(
+        '/api/orders/payment-intent',
+        {
+          method: 'POST',
+          body: JSON.stringify({ orderId }),
+        },
+      );
       const { clientSecret } = piRes.data;
       const { error: initErr } = await initPaymentSheet({
         merchantDisplayName: 'Freshmart Edison',

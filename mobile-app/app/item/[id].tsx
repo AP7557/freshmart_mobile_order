@@ -4,7 +4,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useCartStore } from '@/store/cart';
-import { MenuData, Item, MenuModifier, ModifierOption } from '@/types';
+import {
+  MenuData,
+  Item,
+  MenuModifier,
+  ModifierOption,
+  CartItem,
+} from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -85,11 +91,33 @@ export default function ItemDetailScreen() {
   }
 
   function handleAddToCart() {
+    // Narrows `item` from `Item | undefined` to `Item` inside this function scope
+    if (!item) return;
+
     const selectedIds = Object.values(selection).flat();
-    for (let i = 0; i < qty; i++) addItem(item, selectedIds);
+
+    const modifierDelta = selectedIds.reduce((sum, oid) => {
+      const opt = data?.modifierOptions.find((o) => o.id === oid);
+      return sum + (opt?.priceDelta ?? 0);
+    }, 0);
+
+    const unitPrice = item.basePrice + modifierDelta; // ✅ item is Item here
+    const lineTotal = unitPrice * qty;
+
+    const cartItem: CartItem = {
+      cartId: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, // ✅
+      item, // ✅ Item, not Item | undefined
+      quantity: qty,
+      unitPrice,
+      lineTotal,
+      lineDiscount: 0,
+      selectedModifierOptionIds: selectedIds,
+    };
+
+    addItem(cartItem);
     router.back();
   }
-
+  
   const extraCents = Object.entries(selection).reduce(
     (acc, [, optIds]) =>
       acc +
