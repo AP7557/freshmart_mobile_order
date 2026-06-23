@@ -74,8 +74,8 @@ export default function CheckoutScreen() {
           })),
         }),
       });
-
-      const { orderId, clientSecret } = orderRes.data;
+      console.log(orderRes);
+      const { orderId, clientSecret } = orderRes;
 
       // Step 2 — init PaymentSheet (publishableKey is already in StripeProvider in _layout.tsx)
       const { error: initError } = await initPaymentSheet({

@@ -31,15 +31,28 @@ const schema = z.object({
   name: z.string().min(1, 'Name required'),
   description: z.string().default(''),
   type: z.enum(['percent', 'fixed', 'item', 'buy_x_get_y', 'bundle']),
-  value: z.coerce.number().int().min(0),
+  value: z.preprocess(
+    (v) => (v === '' || v == null ? 0 : Number(v)),
+    z.number().int().min(0),
+  ),
+
   startAt: z.string().min(1, 'Start date required'),
   endAt: z.string().min(1, 'End date required'),
-  minOrderTotal: z.coerce.number().int().min(0).default(0),
+  minOrderTotal: z.preprocess(
+    (v) => (v === '' || v == null ? 0 : Number(v)),
+    z.number().int().min(0).default(0),
+  ),
   isActive: z.boolean().default(true),
   promotionCode: z.string().max(50).default(''),
   itemIds: z.array(z.number()).default([]),
-  triggerQty: z.coerce.number().int().min(1).default(1),
-  rewardQty: z.coerce.number().int().min(1).default(1),
+  triggerQty: z.preprocess(
+    (v) => (v === '' || v == null ? 0 : Number(v)),
+    z.number().int().min(1).default(1),
+  ),
+  rewardQty: z.preprocess(
+    (v) => (v === '' || v == null ? 0 : Number(v)),
+    z.number().int().min(1).default(1),
+  ),
   triggerItemIds: z.array(z.number()).default([]),
   rewardItemIds: z.array(z.number()).default([]),
   appliesTo: z
@@ -212,7 +225,7 @@ export default function PromotionsPage() {
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       type: 'percent',
       isActive: true,

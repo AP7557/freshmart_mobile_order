@@ -7,12 +7,15 @@ import { z } from 'zod';
 const schema = z.object({
   name: z.string().min(1),
   description: z.string().default(''),
-  basePrice: z.coerce.number().int().min(0),
-  imageUrl: z.string().url().or(z.literal('')),
+  basePrice: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : Number(v)),
+    z.number().int().min(0),
+  ),
+  imageUrl: z.union([z.url(), z.literal('')]).default(''),
   isActive: z.boolean().default(true),
 });
-type FormData = z.infer<typeof schema>;
 
+type FormData = z.output<typeof schema>;
 type Item = FormData & { id: number; createdAt: string };
 
 export default function ItemsPage() {
@@ -30,7 +33,7 @@ export default function ItemsPage() {
     setValue,
     watch,
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { isActive: true, description: '', imageUrl: '' },
   });
   const watchedImageUrl = watch('imageUrl');
@@ -78,7 +81,8 @@ export default function ItemsPage() {
     if (!file) return;
     setUploading(true);
     try {
-      const form = new FormData();
+      // ✅ No name collision — browser's FormData used directly here
+      const form = new window.FormData();
       form.append('file', file);
       const res = await fetch('/api/admin/upload', {
         method: 'POST',
@@ -97,6 +101,7 @@ export default function ItemsPage() {
     }
   }
 
+  // JSX below is unchanged — just replace FormData → ItemFormData in the type annotations above
   return (
     <div>
       <div className='flex items-center justify-between mb-6'>
@@ -162,7 +167,6 @@ export default function ItemsPage() {
                 className='mt-2 w-24 h-24 object-cover rounded-lg border'
               />
             )}
-            {/* keep hidden input so react-hook-form tracks the value */}
             <input type='hidden' {...register('imageUrl')} />
           </label>
           <label className='flex items-center gap-2 text-sm self-end'>

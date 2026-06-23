@@ -53,13 +53,22 @@ const schema = z.object({
   category: z.enum(CATEGORIES),
   type: z.enum(['single', 'multiple']),
   required: z.boolean().default(false),
-  maxChoices: z.coerce.number().int().positive().nullable().optional(),
-  sortOrder: z.coerce.number().int().min(0).default(0),
+  maxChoices: z.preprocess(
+    (v) => (v === '' || v == null ? null : Number(v)),
+    z.number().int().positive().nullable(),
+  ),
+  sortOrder: z.preprocess(
+    (v) => (v === '' || v == null ? 0 : Number(v)),
+    z.number().int().min(0).default(0),
+  ),
   options: z
     .array(
       z.object({
         name: z.string().min(1, 'Option name required'),
-        priceDelta: z.coerce.number().int().default(0),
+        priceDelta: z.preprocess(
+          (v) => (v === '' || v == null ? 0 : Number(v)),
+          z.number().int().default(0),
+        ),
         isDefault: z.boolean().default(false),
       }),
     )
@@ -92,9 +101,9 @@ export default function ModifiersPage() {
     watch,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: {
-      category: 'Bread / Base',
+      category: 'Other',
       type: 'single',
       required: false,
       sortOrder: 0,

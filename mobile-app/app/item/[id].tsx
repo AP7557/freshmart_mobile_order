@@ -114,6 +114,8 @@ export default function ItemDetailScreen() {
       quantity: qty,
       selectedModifierOptionIds: Object.values(selections).flat(),
       unitPrice,
+      lineTotal: unitPrice * qty,
+      lineDiscount: 0,
     });
     Alert.alert('Added! 🛒', `${item.name} × ${qty}`, [
       { text: 'Keep Shopping', onPress: () => router.back() },
