@@ -1,218 +1,310 @@
+import { useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
-import { useCartStore } from '@/store/cart';
-import { apiFetch } from '@/lib/api';
-import { OrderConfirmation } from '@/types';
-import { useState } from 'react';
-function isValidPhone(p: string) {
-  return /^\+?[1-9]\d{7,14}$/.test(p.replace(/\s/g, ''));
+import { useMutation } from '@tanstack/react-query';
+import { useCartStore } from '../store/cart';
+import { apiFetch } from '../lib/api';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+function fmt(cents: number) {
+  return `$${(cents / 100).toFixed(2)}`;
 }
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const { items, subtotal, clearCart } = useCartStore();
+  const { items, subtotal, discountTotal, taxTotal, clearCart } =
+    useCartStore();
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [promo, setPromo] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [nameErr, setNameErr] = useState('');
+  const [phoneErr, setPhoneErr] = useState('');
+
   function validate(): boolean {
-    const e: Record<string, string> = {};
-    if (!name.trim()) e.name = 'Full name is required';
-    if (!isValidPhone(phone))
-      e.phone = 'Enter a valid phone (e.g. +12125551234)';
-    setErrors(e);
-    return Object.keys(e).length === 0;
+    let valid = true;
+    if (!name.trim()) {
+      setNameErr('Name is required');
+      valid = false;
+    } else {
+      setNameErr('');
+    }
+    const digits = phone.replace(/[^\d]/g, '');
+    if (digits.length < 10) {
+      setPhoneErr('Enter a valid 10-digit US phone number');
+      valid = false;
+    } else {
+      setPhoneErr('');
+    }
+    return valid;
   }
-  async function handlePay() {
-    if (!validate()) return;
-    setLoading(true);
-    try {
-      const result = await apiFetch<OrderConfirmation>('/api/orders', {
+
+  const checkout = useMutation({
+    mutationFn: async () => {
+      if (!validate()) throw new Error('validation');
+
+      // Step 1 — create order draft on the server (server recalculates totals)
+      const orderRes = await apiFetch('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           customerName: name.trim(),
-          customerPhone: phone.trim(),
-          lines: items.map((ci) => ({
-            itemId: ci.item.id,
-            quantity: ci.quantity,
-            modifierOptionIds: ci.selectedModifierOptionIds,
+          customerPhone: phone.replace(/[^\d]/g, ''),
+          items: items.map((i) => ({
+            itemId: i.item.id,
+            quantity: i.quantity,
+            selectedModifierOptionIds: i.selectedModifierOptionIds,
           })),
-          promoCode: promo.trim() || undefined,
         }),
       });
-      const { error: initErr } = await initPaymentSheet({
-        merchantDisplayName: 'FreshMart',
-        paymentIntentClientSecret: result.clientSecret,
-        defaultBillingDetails: { name: name.trim(), phone: phone.trim() },
-        allowsDelayedPaymentMethods: false,
+      const orderId: number = orderRes.data.id;
+
+      // Step 2 — fetch PaymentIntent client secret (Dahlia 2026-05-27)
+      const piRes = await apiFetch('/api/orders/payment-intent', {
+        method: 'POST',
+        body: JSON.stringify({ orderId }),
       });
-      if (initErr) {
-        Alert.alert('Payment Setup Error', initErr.message);
-        return;
+      const { clientSecret } = piRes.data;
+
+      // Step 3 — initialise PaymentSheet
+      const { error: initError } = await initPaymentSheet({
+        merchantDisplayName: 'Freshmart Edison',
+        paymentIntentClientSecret: clientSecret,
+        defaultBillingDetails: {
+          name: name.trim(),
+          phone: phone.replace(/[^\d]/g, ''),
+        },
+        // Visual theming
+        appearance: {
+          colors: {
+            primary: '#1a6b3c',
+            background: '#ffffff',
+            componentBackground: '#f0f9ea',
+            componentBorder: '#d1ead8',
+            componentDivider: '#d1ead8',
+            primaryText: '#0d3d20',
+            secondaryText: '#4a7a5a',
+            placeholderText: '#9ab8a4',
+          },
+          shapes: {
+            borderRadius: 12,
+            borderWidth: 1.0,
+          },
+        },
+        // Native wallets — Apple Pay / Google Pay
+        applePay: { merchantCountryCode: 'US' },
+        googlePay: { merchantCountryCode: 'US', testEnv: __DEV__ },
+      });
+
+      if (initError) throw new Error(initError.message);
+
+      // Step 4 — present the sheet
+      const { error: presentError } = await presentPaymentSheet();
+      if (presentError) {
+        if (presentError.code === 'Canceled') return null; // user dismissed
+        throw new Error(presentError.message);
       }
-      const { error: presentErr } = await presentPaymentSheet();
-      if (presentErr) {
-        if (presentErr.code !== 'Canceled')
-          Alert.alert('Payment Failed', presentErr.message);
-        return;
-      }
+
+      // Step 5 — success
       clearCart();
-      router.replace(`/order-confirmation/${result.orderId}`);
-    } catch (e: unknown) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Something went wrong.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+      return orderId;
+    },
+
+    onSuccess: (orderId) => {
+      if (orderId) router.replace(`/order-confirmation/${orderId}`);
+    },
+
+    onError: (err: Error) => {
+      if (err.message !== 'validation') {
+        Alert.alert('Payment failed', err.message);
+      }
+    },
+  });
+
   return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.scroll}
-      keyboardShouldPersistTaps='handled'
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#f0f9ea' }}
+      edges={['bottom']}
     >
-      <Text style={s.sectionHead}>Your Details</Text>
-      <View style={s.field}>
-        <Text style={s.label}>
-          Full Name <Text style={s.req}>*</Text>
-        </Text>
-        <TextInput
-          style={[s.input, errors.name ? s.inputErr : null]}
-          value={name}
-          onChangeText={setName}
-          placeholder='Jane Smith'
-          autoCapitalize='words'
-          autoCorrect={false}
-          returnKeyType='next'
-        />
-        {!!errors.name && <Text style={s.errMsg}>{errors.name}</Text>}
-      </View>
-      <View style={s.field}>
-        <Text style={s.label}>
-          Phone Number <Text style={s.req}>*</Text>
-        </Text>
-        <TextInput
-          style={[s.input, errors.phone ? s.inputErr : null]}
-          value={phone}
-          onChangeText={setPhone}
-          placeholder='+12125551234'
-          keyboardType='phone-pad'
-          autoCorrect={false}
-          returnKeyType='done'
-        />
-        {!!errors.phone && <Text style={s.errMsg}>{errors.phone}</Text>}
-        <Text style={s.hint}>We'll text your order status to this number.</Text>
-      </View>
-      <View style={s.field}>
-        <Text style={s.label}>
-          Promo Code <Text style={s.opt}>(optional)</Text>
-        </Text>
-        <TextInput
-          style={s.input}
-          value={promo}
-          onChangeText={setPromo}
-          placeholder='SAVE10'
-          autoCapitalize='characters'
-          autoCorrect={false}
-        />
-      </View>
-      <View style={s.summaryCard}>
-        <Text style={s.sectionHead}>Order Summary</Text>
-        {items.map((ci) => (
-          <View key={ci.cartId} style={s.sumRow}>
-            <Text style={s.sumQty}>{ci.quantity}×</Text>
-            <Text style={s.sumName}>{ci.item.name}</Text>
-            <Text style={s.sumPrice}>
-              ${((ci.unitPrice * ci.quantity) / 100).toFixed(2)}
-            </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+          keyboardShouldPersistTaps='handled'
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Contact info ── */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Your Info</Text>
+
+            <Text style={styles.label}>Name</Text>
+            <input
+              style={styles.input}
+              placeholder='Jane Smith'
+              value={name}
+              onChange={(e: any) =>
+                setName(e.nativeEvent?.text ?? e.target?.value ?? '')
+              }
+            />
+            {!!nameErr && <Text style={styles.error}>{nameErr}</Text>}
+
+            <Text style={[styles.label, { marginTop: 12 }]}>Phone Number</Text>
+            <input
+              style={styles.input}
+              placeholder='(555) 000-0000'
+              value={phone}
+              onChange={(e: any) =>
+                setPhone(e.nativeEvent?.text ?? e.target?.value ?? '')
+              }
+            />
+            {!!phoneErr && <Text style={styles.error}>{phoneErr}</Text>}
           </View>
-        ))}
-        <View style={s.divider} />
-        <View style={s.sumRow}>
-          <Text style={[s.sumName, { fontWeight: '700' }]}>Est. Subtotal</Text>
-          <Text style={[s.sumPrice, { fontWeight: '800', fontSize: 15 }]}>
-            ${(subtotal() / 100).toFixed(2)}
+
+          {/* ── Order summary ── */}
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <Text style={styles.sectionTitle}>Order Summary</Text>
+
+            {items.map((item) => (
+              <View key={item.id} style={styles.row}>
+                <Text style={styles.rowLabel} numberOfLines={1}>
+                  {item.quantity}× {item.name}
+                </Text>
+                <Text style={styles.rowValue}>{fmt(item.lineTotal)}</Text>
+              </View>
+            ))}
+
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Subtotal</Text>
+              <Text style={styles.rowValue}>{fmt(subtotal)}</Text>
+            </View>
+
+            {discountTotal > 0 && (
+              <View style={styles.row}>
+                <Text style={[styles.rowLabel, { color: '#1a6b3c' }]}>
+                  Discount
+                </Text>
+                <Text style={[styles.rowValue, { color: '#1a6b3c' }]}>
+                  -{fmt(discountTotal)}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Tax</Text>
+              <Text style={styles.rowValue}>{fmt(taxTotal)}</Text>
+            </View>
+
+            <View style={[styles.row, { marginTop: 4 }]}>
+              <Text
+                style={[styles.rowLabel, { fontWeight: '700', fontSize: 16 }]}
+              >
+                Total
+              </Text>
+              <Text
+                style={[
+                  styles.rowValue,
+                  { fontWeight: '700', fontSize: 16, color: '#1a6b3c' },
+                ]}
+              >
+                {fmt(total)}
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* ── Pay button ── */}
+        <View style={styles.footer}>
+          <button
+            style={{
+              ...styles.payButton,
+              opacity: checkout.isPending ? 0.7 : 1,
+            }}
+            disabled={checkout.isPending}
+            onClick={() => checkout.mutate()}
+          >
+            <Text style={styles.payButtonText}>
+              {checkout.isPending ? 'Processing…' : `Pay ${fmt(total)}`}
+            </Text>
+          </button>
+          <Text style={styles.caption}>
+            Secured by Stripe · Ready in ~30 min
           </Text>
         </View>
-        <Text style={s.sumNote}>Final total calculated at payment.</Text>
-      </View>
-      <View style={s.notice}>
-        <Text style={s.noticeText}>
-          💳 Payment processed securely via Stripe.
-        </Text>
-      </View>
-      <View style={s.notice}>
-        <Text style={s.noticeText}>⏱ Wait time shown after placing order.</Text>
-      </View>
-      <TouchableOpacity
-        style={[s.payBtn, loading && s.payBtnLoading]}
-        onPress={handlePay}
-        disabled={loading}
-        activeOpacity={0.85}
-      >
-        {loading ? (
-          <ActivityIndicator color='#fff' />
-        ) : (
-          <Text style={s.payBtnText}>Pay Now →</Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f9fafb' },
-  scroll: { padding: 16, gap: 14, paddingBottom: 40 },
-  sectionHead: { fontSize: 17, fontWeight: '700', color: '#111827' },
-  field: { gap: 4 },
-  label: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  req: { color: '#ef4444' },
-  opt: { color: '#9ca3af', fontWeight: '400' },
+
+const styles: Record<string, any> = {
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0d3d20',
+    marginBottom: 12,
+  },
+  label: { fontSize: 13, fontWeight: '600', color: '#4a7a5a', marginBottom: 4 },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: '#d1ead8',
+    borderRadius: 8,
+    padding: 10,
     fontSize: 15,
-    color: '#111827',
+    backgroundColor: '#f0f9ea',
+    color: '#0d3d20',
   },
-  inputErr: { borderColor: '#ef4444' },
-  errMsg: { fontSize: 12, color: '#ef4444' },
-  hint: { fontSize: 11, color: '#9ca3af' },
-  summaryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
+  error: { fontSize: 12, color: '#c0392b', marginTop: 4 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  sumRow: { flexDirection: 'row', alignItems: 'center' },
-  sumQty: { fontSize: 13, color: '#9ca3af', width: 28 },
-  sumName: { flex: 1, fontSize: 13, color: '#374151' },
-  sumPrice: { fontSize: 13, color: '#111827' },
-  divider: { height: 1, backgroundColor: '#f3f4f6' },
-  sumNote: { fontSize: 11, color: '#9ca3af' },
-  notice: { backgroundColor: '#f8fafc', borderRadius: 10, padding: 12 },
-  noticeText: { fontSize: 12, color: '#6b7280', lineHeight: 18 },
-  payBtn: {
-    backgroundColor: '#111827',
-    borderRadius: 14,
+  rowLabel: { fontSize: 14, color: '#4a7a5a', flex: 1, marginRight: 8 },
+  rowValue: { fontSize: 14, color: '#0d3d20', fontWeight: '500' },
+  divider: { height: 1, backgroundColor: '#d1ead8', marginVertical: 8 },
+  footer: {
+    padding: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#d1ead8',
+    backgroundColor: '#ffffff',
+  },
+  payButton: {
+    backgroundColor: '#1a6b3c',
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    border: 'none',
+    cursor: 'pointer',
   },
-  payBtnLoading: { backgroundColor: '#374151' },
-  payBtnText: { color: '#fff', fontWeight: '700', fontSize: 17 },
-});
+  payButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  caption: {
+    fontSize: 12,
+    color: '#9ab8a4',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+};
