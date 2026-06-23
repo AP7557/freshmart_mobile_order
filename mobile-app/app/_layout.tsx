@@ -9,28 +9,21 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PortalHost } from '@rn-primitives/portal';
-import {
-  Theme,
-  ThemeProvider,
-  DarkTheme,
-  DefaultTheme,
-} from 'expo-router/react-navigation';
+import { ThemeProvider } from '@react-navigation/native'; // ← correct source
 import { NAV_THEME } from '@/lib/theme';
 
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
-
-const LIGHT_THEME: Theme = { ...DefaultTheme, colors: NAV_THEME.light };
-const DARK_THEME: Theme = { ...DarkTheme, colors: NAV_THEME.dark };
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark'; // ← the missing boolean
+  const isDark = colorScheme === 'dark';
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider value={isDark ? DARK_THEME : LIGHT_THEME}>
+      {/* NAV_THEME.light / NAV_THEME.dark are already full Theme objects */}
+      <ThemeProvider value={isDark ? NAV_THEME.dark : NAV_THEME.light}>
         <StripeProvider
           publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
           merchantIdentifier='merchant.com.freshmart.edison'
@@ -61,8 +54,7 @@ export default function RootLayout() {
           <StatusBar style={isDark ? 'light' : 'dark'} />
         </StripeProvider>
       </ThemeProvider>
-      <PortalHost />{' '}
-      {/* outside ThemeProvider so portals render above everything */}
+      <PortalHost />
     </QueryClientProvider>
   );
 }
