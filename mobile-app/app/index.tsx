@@ -8,12 +8,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '~/lib/api';
-import { FMLogo } from '~/components/fm-logo';
-import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
-import { Badge } from '~/components/ui/badge';
-import type { MenuData, Promotion } from '~/types';
+import { apiFetch } from '@/lib/api';
+import { FMLogo } from '@/components/fm-logo';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import type { MenuData, Promotion } from '@/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 function PromoBanner({ promo }: { promo: Promotion }) {
@@ -49,7 +49,7 @@ export default function HomeScreen() {
         <View className='bg-fm-dark px-6 pt-8 pb-10'>
           <FMLogo size={40} className='mb-6 [&_span]:text-white' />
           <Text className='text-white text-3xl font-bold leading-tight'>
-            Fresh. Fast.{''}Delivered.
+            Freshly Made
           </Text>
           <Text className='text-fm-light mt-2 text-base'>
             Order from Freshmart Edison

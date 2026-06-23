@@ -1,76 +1,55 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  :root {
-    /* Freshmart light mode — white surface, forest-green primary */
-    --background:   0 0% 100%;
-    --foreground:   140 60% 10%;
+@theme {
+  /* Freshmart brand */
+  --color-fm-dark:  #1a6b3c;
+  --color-fm-lime:  #7dc242;
+  --color-fm-light: #a8d96c;
+  --color-fm-pale:  #f0f9ea;
 
-    --card:         0 0% 100%;
-    --card-foreground: 140 60% 10%;
+  /* shadcn tokens — v4 style (no hsl wrapper here) */
+  --color-background:        oklch(1 0 0);
+  --color-foreground:        oklch(0.14 0.04 145);
+  --color-primary:           oklch(0.37 0.1 145);
+  --color-primary-foreground: oklch(1 0 0);
+  --color-secondary:         oklch(0.96 0.03 120);
+  --color-secondary-foreground: oklch(0.25 0.08 145);
+  --color-muted:             oklch(0.97 0.01 120);
+  --color-muted-foreground:  oklch(0.55 0.03 145);
+  --color-accent:            oklch(0.68 0.16 122);
+  --color-accent-foreground: oklch(1 0 0);
+  --color-destructive:       oklch(0.577 0.245 27.325);
+  --color-border:            oklch(0.91 0.02 145);
+  --color-input:             oklch(0.91 0.02 145);
+  --color-ring:              oklch(0.37 0.1 145);
+  --color-card:              oklch(1 0 0);
+  --color-card-foreground:   oklch(0.14 0.04 145);
+  --color-popover:           oklch(1 0 0);
+  --color-popover-foreground: oklch(0.14 0.04 145);
+  --radius: 0.625rem;
+}
 
-    --popover:      0 0% 100%;
-    --popover-foreground: 140 60% 10%;
-
-    /* primary = dark forest green #1a6b3c */
-    --primary:      145 61% 26%;
-    --primary-foreground: 0 0% 100%;
-
-    /* secondary = pale lime wash */
-    --secondary:    95 52% 93%;
-    --secondary-foreground: 145 61% 18%;
-
-    --muted:        95 20% 96%;
-    --muted-foreground: 140 20% 45%;
-
-    /* accent = lime green #7dc242 */
-    --accent:       91 50% 51%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive:  0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border:       140 20% 88%;
-    --input:        140 20% 88%;
-    --ring:         145 61% 26%;
-
-    --radius: 0.625rem;
-  }
-
-  .dark {
-    --background:   140 30% 6%;
-    --foreground:   95 40% 95%;
-
-    --card:         140 25% 9%;
-    --card-foreground: 95 40% 95%;
-
-    --popover:      140 25% 9%;
-    --popover-foreground: 95 40% 95%;
-
-    --primary:      91 50% 51%;
-    --primary-foreground: 140 60% 8%;
-
-    --secondary:    140 25% 14%;
-    --secondary-foreground: 95 40% 90%;
-
-    --muted:        140 20% 14%;
-    --muted-foreground: 140 15% 60%;
-
-    --accent:       145 61% 38%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive:  0 62% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border:       140 20% 18%;
-    --input:        140 20% 18%;
-    --ring:         91 50% 51%;
-  }
+.dark {
+  --color-background:        oklch(0.1 0.03 145);
+  --color-foreground:        oklch(0.95 0.02 120);
+  --color-primary:           oklch(0.68 0.16 122);
+  --color-primary-foreground: oklch(0.1 0.03 145);
+  --color-secondary:         oklch(0.16 0.03 145);
+  --color-secondary-foreground: oklch(0.9 0.02 120);
+  --color-muted:             oklch(0.16 0.02 145);
+  --color-muted-foreground:  oklch(0.55 0.02 145);
+  --color-accent:            oklch(0.45 0.12 145);
+  --color-accent-foreground: oklch(1 0 0);
+  --color-destructive:       oklch(0.5 0.2 27);
+  --color-border:            oklch(0.22 0.03 145);
+  --color-input:             oklch(0.22 0.03 145);
+  --color-ring:              oklch(0.68 0.16 122);
+  --color-card:              oklch(0.12 0.03 145);
+  --color-card-foreground:   oklch(0.95 0.02 120);
+  --color-popover:           oklch(0.12 0.03 145);
+  --color-popover-foreground: oklch(0.95 0.02 120);
 }
 
 @layer base {
-  * { @apply border-border; }
   body { @apply bg-background text-foreground font-sans antialiased; }
 }

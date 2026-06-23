@@ -734,7 +734,7 @@ export default function ModifiersPage() {
 
       {/* ── Customer flow preview ── */}
       {modifiers.length > 0 && (
-        <div className='mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5'>
+        <div className='mt-8 bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5'>
           <p className='text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3'>
             📱 Customer Step Preview
           </p>
