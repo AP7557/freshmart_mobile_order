@@ -14,7 +14,7 @@ import {
   ThemeProvider,
   DarkTheme,
   DefaultTheme,
-} from '@react-navigation/native';
+} from 'expo-router/react-navigation';
 import { NAV_THEME } from '@/lib/theme';
 
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
