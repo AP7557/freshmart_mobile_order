@@ -11,18 +11,18 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
-// ─── Enums ───────────────────────────────────────────────────────────────────
-
 export const modifierTypeEnum = pgEnum('modifier_type', ['single', 'multiple']);
 export const promotionTypeEnum = pgEnum('promotion_type', [
-  'percent', // e.g. 10% off whole order or specific items
-  'fixed', // e.g. $5 off order
-  'item', // legacy item-level discount
-  'buy_x_get_y', // buy X of triggerItems → Y of rewardItems free/discounted
-  'bundle', // select items from a bundle set → discount applies
+  'percent',
+  'fixed',
+  'item',
+  'buy_x_get_y',
+  'bundle',
 ]);
 
+// FIX #9: 'pending_payment' added — orders start here, kitchen never sees this status.
 export const orderStatusEnum = pgEnum('order_status', [
+  'pending_payment',
   'paid',
   'preparing',
   'ready',
@@ -31,14 +31,10 @@ export const orderStatusEnum = pgEnum('order_status', [
 ]);
 export const userRoleEnum = pgEnum('user_role', ['admin', 'kitchen']);
 
-// ─── Settings ────────────────────────────────────────────────────────────────
-
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
-
-// ─── Users (admin + kitchen) ─────────────────────────────────────────────────
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -47,8 +43,6 @@ export const users = pgTable('users', {
   role: userRoleEnum('role').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
-
-// ─── Items ───────────────────────────────────────────────────────────────────
 
 export const items = pgTable(
   'items',
@@ -64,8 +58,6 @@ export const items = pgTable(
   },
   (t) => [index('items_is_active_idx').on(t.isActive)],
 );
-
-// ─── Modifiers ───────────────────────────────────────────────────────────────
 
 export const modifiers = pgTable('modifiers', {
   id: serial('id').primaryKey(),
@@ -91,7 +83,7 @@ export const modifierOptions = pgTable(
   (t) => [index('modifier_options_modifier_id_idx').on(t.modifierId)],
 );
 
-// Item <-> Modifier junction (which modifiers belong to which item)
+// FIX #11: Index on modifierId for the /api/menu JOIN query.
 export const itemModifiers = pgTable(
   'item_modifiers',
   {
@@ -102,10 +94,11 @@ export const itemModifiers = pgTable(
       .notNull()
       .references(() => modifiers.id, { onDelete: 'cascade' }),
   },
-  (t) => [primaryKey({ columns: [t.itemId, t.modifierId] })],
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.modifierId] }),
+    index('item_modifiers_modifier_id_idx').on(t.modifierId),
+  ],
 );
-
-// ─── Promotions ───────────────────────────────────────────────────────────────
 
 export const promotions = pgTable(
   'promotions',
@@ -114,13 +107,12 @@ export const promotions = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
     type: promotionTypeEnum('type').notNull(),
-    value: integer('value').notNull(), // percent (0-100) or cents
+    value: integer('value').notNull(),
     startAt: timestamp('start_at').notNull(),
     endAt: timestamp('end_at').notNull(),
     minOrderTotal: integer('min_order_total').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
-    promotionCode: text('promotion_code'), // null = auto-apply
-    // BuyXGetY / bundle fields
+    promotionCode: text('promotion_code'),
     triggerQty: integer('trigger_qty').notNull().default(1),
     rewardQty: integer('reward_qty').notNull().default(1),
     triggerItemIds: integer('trigger_item_ids').array().notNull().default([]),
@@ -147,8 +139,6 @@ export const promotionItems = pgTable(
   ],
 );
 
-// ─── Orders ──────────────────────────────────────────────────────────────────
-
 export const orders = pgTable(
   'orders',
   {
@@ -156,7 +146,7 @@ export const orders = pgTable(
     customerName: text('customer_name').notNull(),
     customerPhone: text('customer_phone').notNull(),
     estimatedReadyAt: timestamp('estimated_ready_at').notNull(),
-    status: orderStatusEnum('status').notNull().default('preparing'),
+    status: orderStatusEnum('status').notNull().default('pending_payment'),
     subtotal: integer('subtotal').notNull(),
     discountTotal: integer('discount_total').notNull().default(0),
     taxTotal: integer('tax_total').notNull().default(0),
@@ -202,19 +192,16 @@ export const orderItemModifiers = pgTable(
   (t) => [index('order_item_modifiers_order_item_id_idx').on(t.orderItemId)],
 );
 
-// ─── Relations ────────────────────────────────────────────────────────────────
-
+// Relations
 export const itemsRelations = relations(items, ({ many }) => ({
   itemModifiers: many(itemModifiers),
   promotionItems: many(promotionItems),
   orderItems: many(orderItems),
 }));
-
 export const modifiersRelations = relations(modifiers, ({ many }) => ({
   options: many(modifierOptions),
   itemModifiers: many(itemModifiers),
 }));
-
 export const modifierOptionsRelations = relations(
   modifierOptions,
   ({ one }) => ({
@@ -224,17 +211,14 @@ export const modifierOptionsRelations = relations(
     }),
   }),
 );
-
 export const ordersRelations = relations(orders, ({ many }) => ({
   orderItems: many(orderItems),
 }));
-
 export const orderItemsRelations = relations(orderItems, ({ one, many }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
   item: one(items, { fields: [orderItems.itemId], references: [items.id] }),
   modifiers: many(orderItemModifiers),
 }));
-
 export const orderItemModifiersRelations = relations(
   orderItemModifiers,
   ({ one }) => ({
@@ -248,7 +232,6 @@ export const orderItemModifiersRelations = relations(
     }),
   }),
 );
-
 export const promotionsRelations = relations(promotions, ({ many }) => ({
   promotionItems: many(promotionItems),
 }));

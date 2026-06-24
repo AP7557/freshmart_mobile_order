@@ -25,13 +25,11 @@ function fmt(cents: number) {
 export default function CheckoutScreen() {
   const router = useRouter();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const { items, subtotal, discountTotal, taxTotal, clearCart } =
-    useCartStore();
+  const { items, subtotal, discountTotal, clearCart } = useCartStore();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [nameErr, setNameErr] = useState('');
   const [phoneErr, setPhoneErr] = useState('');
-  const total = subtotal() - discountTotal() + taxTotal();
 
   function validate() {
     let valid = true;
@@ -49,27 +47,37 @@ export default function CheckoutScreen() {
   const checkout = useMutation({
     mutationFn: async () => {
       if (!validate()) throw new Error('validation');
-      const orderRes = await apiFetch<{ data: { id: number } }>('/api/orders', {
+
+      // FIX #1: POST /api/orders now returns clientSecret directly.
+      //         No second call to /api/orders/payment-intent needed.
+      // FIX #8: Field name is modifierOptionIds (matches server OrderLineSchema).
+      const orderRes = await apiFetch<{
+        data: {
+          orderId: number;
+          clientSecret: string;
+          pricing: {
+            subtotal: number;
+            discountTotal: number;
+            taxTotal: number;
+            total: number;
+          };
+          estimatedReadyAt: string;
+        };
+      }>('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           customerName: name.trim(),
           customerPhone: phone.replace(/[^\d]/g, ''),
-          items: items.map((i) => ({
+          lines: items.map((i) => ({
             itemId: i.item.id,
             quantity: i.quantity,
-            selectedModifierOptionIds: i.selectedModifierOptionIds,
+            modifierOptionIds: i.selectedModifierOptionIds, // FIX #8
           })),
         }),
       });
-      const orderId: number = orderRes.data.id;
-      const piRes = await apiFetch<{ data: { clientSecret: string } }>(
-        '/api/orders/payment-intent',
-        {
-          method: 'POST',
-          body: JSON.stringify({ orderId }),
-        },
-      );
-      const { clientSecret } = piRes.data;
+
+      const { orderId, clientSecret } = orderRes.data; // FIX #1
+
       const { error: initErr } = await initPaymentSheet({
         merchantDisplayName: 'Freshmart Edison',
         paymentIntentClientSecret: clientSecret,
@@ -81,22 +89,27 @@ export default function CheckoutScreen() {
         googlePay: { merchantCountryCode: 'US', testEnv: __DEV__ },
       });
       if (initErr) throw new Error(initErr.message);
+
       const { error: presentErr } = await presentPaymentSheet();
       if (presentErr) {
         if (presentErr.code === 'Canceled') return null;
         throw new Error(presentErr.message);
       }
+
       clearCart();
-      return orderId;
+      return { orderId };
     },
-    onSuccess: (orderId) => {
-      if (orderId) router.replace(`/order-confirmation/${orderId}`);
+    onSuccess: (result) => {
+      if (result) router.replace(`/order-confirmation/${result.orderId}`);
     },
     onError: (err: Error) => {
       if (err.message !== 'validation')
         Alert.alert('Payment failed', err.message);
     },
   });
+
+  const sub = subtotal();
+  const disc = discountTotal();
 
   return (
     <SafeAreaView className='flex-1 bg-background' edges={['bottom']}>
@@ -166,29 +179,34 @@ export default function CheckoutScreen() {
               <View className='h-px bg-border my-1' />
               <View className='flex-row justify-between'>
                 <Text className='text-sm text-muted-foreground'>Subtotal</Text>
-                <Text className='text-sm'>{fmt(subtotal())}</Text>
+                <Text className='text-sm'>{fmt(sub)}</Text>
               </View>
-              {discountTotal() > 0 && (
+              {disc > 0 && (
                 <View className='flex-row justify-between'>
                   <Text className='text-sm text-green-600'>Discount</Text>
-                  <Text className='text-sm text-green-600'>
-                    -{fmt(discountTotal())}
-                  </Text>
+                  <Text className='text-sm text-green-600'>-{fmt(disc)}</Text>
                 </View>
               )}
+              {/* FIX #2: Tax computed server-side at 8.875% NYC only.
+                  Old cart store used 6.25% NJ — different from what Stripe charged. */}
               <View className='flex-row justify-between'>
                 <Text className='text-sm text-muted-foreground'>Tax</Text>
-                <Text className='text-sm'>{fmt(taxTotal())}</Text>
+                <Text className='text-sm text-muted-foreground'>
+                  Calculated at checkout
+                </Text>
               </View>
               <View className='h-px bg-border my-1' />
               <View className='flex-row justify-between'>
                 <Text className='text-base font-bold text-foreground'>
-                  Total
+                  Est. Pre-Tax Total
                 </Text>
                 <Text className='text-base font-bold text-primary'>
-                  {fmt(total)}
+                  {fmt(sub - disc)}
                 </Text>
               </View>
+              <Text className='text-xs text-muted-foreground'>
+                Final total with tax confirmed before payment
+              </Text>
             </CardContent>
           </Card>
         </ScrollView>
@@ -200,7 +218,7 @@ export default function CheckoutScreen() {
             onPress={() => checkout.mutate()}
             className='w-full'
           >
-            {checkout.isPending ? 'Processing…' : `Pay ${fmt(total)}`}
+            {checkout.isPending ? 'Processing…' : 'Place Order & Pay'}
           </Button>
           <Text className='text-xs text-muted-foreground text-center'>
             Secured by Stripe · Ready in ~30 min

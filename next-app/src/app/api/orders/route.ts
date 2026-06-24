@@ -5,29 +5,41 @@ import {
   orders,
   orderItems,
   orderItemModifiers,
-  items,
   modifierOptions,
 } from '@/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
+import Stripe from 'stripe';
+import { ok, fail, handleRouteError } from '@/lib/api-response';
 import {
   calculatePricing,
   calculateEstimatedReadyAt,
   resolveUnitPrice,
 } from '@/lib/pricing';
-import { stripe } from '@/lib/stripe';
-import { ok, err, handleRouteError } from '@/lib/api-response';
 
-const OrderLineSchema = z.object({
-  itemId: z.number().int().positive(),
-  quantity: z.number().int().min(1).max(50),
-  // Accept both field names for compatibility
-  modifierOptionIds: z.array(z.number().int().positive()).default([]),
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2024-04-10',
 });
 
+// FIX #8: Accept both field names; transform normalises to modifierOptionIds.
+const OrderLineSchema = z
+  .object({
+    itemId: z.number().int().positive(),
+    quantity: z.number().int().min(1).max(50),
+    modifierOptionIds: z.array(z.number().int().positive()).default([]),
+    selectedModifierOptionIds: z.array(z.number().int().positive()).default([]),
+  })
+  .transform((d) => ({
+    itemId: d.itemId,
+    quantity: d.quantity,
+    modifierOptionIds: d.modifierOptionIds.length
+      ? d.modifierOptionIds
+      : d.selectedModifierOptionIds,
+  }));
+
 const CreateOrderSchema = z.object({
-  customerName: z.string().min(1).max(100).trim(),
-  customerPhone: z.string().min(10).max(15),
-  lines: z.array(OrderLineSchema).min(1).max(30),
+  customerName: z.string().min(1).max(100),
+  customerPhone: z.string().min(10).max(20),
+  lines: z.array(OrderLineSchema).min(1).max(50),
   promoCode: z.string().optional(),
 });
 
@@ -35,114 +47,105 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const parsed = CreateOrderSchema.safeParse(body);
-    if (!parsed.success) return err(parsed.error.issues[0].message);
+    if (!parsed.success) return fail(parsed.error.flatten().fieldErrors, 400);
 
     const { customerName, customerPhone, lines, promoCode } = parsed.data;
 
-    // Fetch item base prices from DB (never trust client prices)
-    const itemIds = [...new Set(lines.map((l) => l.itemId))];
-    const dbItems = await db
-      .select()
-      .from(items)
-      .where(inArray(items.id, itemIds));
-    const itemMap = new Map(dbItems.map((i) => [i.id, i]));
-
-    for (const line of lines) {
-      if (!itemMap.has(line.itemId))
-        return err(`Item ${line.itemId} not found`);
-      if (!itemMap.get(line.itemId)!.isActive)
-        return err(`Item ${line.itemId} is unavailable`);
-    }
-
-    const cartLines = await Promise.all(
-      lines.map(async (line) => {
-        const item = itemMap.get(line.itemId)!;
-        const unitPrice = await resolveUnitPrice(
-          item.basePrice,
-          line.modifierOptionIds,
-        );
-        return { ...line, unitPrice };
+    // Resolve server-side prices — client prices are never trusted
+    const pricedLines = await Promise.all(
+      lines.map(async (l) => {
+        const dbItem = await db.query.items.findFirst({
+          where: (t, { eq }) => eq(t.id, l.itemId),
+        });
+        if (!dbItem) throw new Error(`Item ${l.itemId} not found`);
+        return {
+          ...l,
+          unitPrice: await resolveUnitPrice(
+            dbItem.basePrice,
+            l.modifierOptionIds,
+          ),
+        };
       }),
     );
 
-    const pricing = await calculatePricing(cartLines, promoCode);
+    const pricing = await calculatePricing(pricedLines, promoCode);
     const estimatedReadyAt = await calculateEstimatedReadyAt(pricing.total);
 
-    // Create order in DB
-    const [order] = await db
-      .insert(orders)
-      .values({
-        customerName,
-        customerPhone,
-        estimatedReadyAt,
-        status: 'preparing',
-        subtotal: pricing.subtotal,
-        discountTotal: pricing.discountTotal,
-        taxTotal: pricing.taxTotal,
-        total: pricing.total,
-      })
-      .returning();
-
-    // Insert order items + modifiers
-    for (const line of cartLines) {
-      const lineSubtotal = line.unitPrice * line.quantity;
-      const lineDiscount = pricing.lineDiscounts?.[line.itemId] ?? 0;
-      const lineTotal = lineSubtotal - lineDiscount;
-
-      const [oi] = await db
-        .insert(orderItems)
+    // FIX #4: Entire order creation in a single transaction.
+    // If any insert fails mid-loop the whole order is rolled back — no orphan rows.
+    const order = await db.transaction(async (tx) => {
+      // FIX #9: status starts as 'pending_payment'; webhook advances to 'paid'.
+      const [newOrder] = await tx
+        .insert(orders)
         .values({
-          orderId: order.id,
-          itemId: line.itemId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          lineSubtotal,
-          lineDiscount,
-          lineTotal,
+          customerName,
+          customerPhone,
+          estimatedReadyAt,
+          status: 'pending_payment',
+          subtotal: pricing.subtotal,
+          discountTotal: pricing.discountTotal,
+          taxTotal: pricing.taxTotal,
+          total: pricing.total,
         })
         .returning();
 
-      if (line.modifierOptionIds.length > 0) {
-        const opts = await db
-          .select()
-          .from(modifierOptions)
-          .where(inArray(modifierOptions.id, line.modifierOptionIds));
+      for (const line of pricedLines) {
+        const lineSubtotal = line.unitPrice * line.quantity;
+        const lineDiscount = pricing.lineDiscounts?.[line.itemId] ?? 0;
 
-        await db.insert(orderItemModifiers).values(
-          opts.map((opt) => ({
-            orderItemId: oi.id,
-            modifierOptionId: opt.id,
-            priceDelta: opt.priceDelta,
-          })),
-        );
+        const [oi] = await tx
+          .insert(orderItems)
+          .values({
+            orderId: newOrder.id,
+            itemId: line.itemId,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            lineSubtotal,
+            lineDiscount,
+            lineTotal: lineSubtotal - lineDiscount,
+          })
+          .returning();
+
+        if (line.modifierOptionIds.length) {
+          const opts = await tx
+            .select()
+            .from(modifierOptions)
+            .where(inArray(modifierOptions.id, line.modifierOptionIds));
+
+          if (opts.length) {
+            await tx.insert(orderItemModifiers).values(
+              opts.map((opt) => ({
+                orderItemId: oi.id,
+                modifierOptionId: opt.id,
+                priceDelta: opt.priceDelta,
+              })),
+            );
+          }
+        }
       }
-    }
 
-    // Create Stripe PaymentIntent — Dahlia 2026-05-27
-    // automatic_payment_methods with allow_redirects:"never" keeps PaymentSheet redirect-free on mobile
+      return newOrder;
+    });
+
+    // FIX #4: PI created after transaction succeeds — no leaked PI on DB failure.
+    // FIX #1: clientSecret returned here; mobile checkout no longer calls
+    //         /api/orders/payment-intent separately (which created a second PI).
+    // FIX #15: orderId stored as string in metadata for safe parseInt in webhook.
     const paymentIntent = await stripe.paymentIntents.create({
       amount: pricing.total,
       currency: 'usd',
-      automatic_payment_methods: {
-        enabled: true,
-        allow_redirects: 'never',
-      },
-      metadata: {
-        orderId: String(order.id),
-        customerName,
-        customerPhone,
-      },
-      description: `Freshmart Order #${order.id}`,
+      metadata: { orderId: String(order.id) },
+      automatic_payment_methods: { enabled: true },
     });
 
     await db
       .update(orders)
       .set({ stripePaymentIntentId: paymentIntent.id })
-      .where(eq(orders.id, order.id));
+      .where((t: any) => t.id === order.id);
 
     return ok({
       orderId: order.id,
-      clientSecret: paymentIntent.client_secret,
+      clientSecret: paymentIntent.client_secret, // FIX #1
       pricing,
       estimatedReadyAt,
     });

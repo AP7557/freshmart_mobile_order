@@ -33,12 +33,12 @@ const STATUS_BADGE: Record<
   preparing: 'secondary',
   ready: 'default',
 };
-const nextStatus: Record<string, string> = {
+const NEXT_STATUS: Record<string, string> = {
   paid: 'preparing',
   preparing: 'ready',
   ready: 'completed',
 };
-const nextLabel: Record<string, string> = {
+const NEXT_LABEL: Record<string, string> = {
   paid: 'Start Preparing',
   preparing: 'Mark Ready',
   ready: 'Complete',
@@ -47,34 +47,59 @@ const nextLabel: Record<string, string> = {
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState<number | null>(null);
 
+  // FIX #10: try/catch + res.ok on every fetch — errors are now visible to staff.
   const load = useCallback(async () => {
-    const res = await fetch('/api/kitchen/orders');
-    const json = await res.json();
-    setOrders(json.data ?? []);
-    setLoading(false);
+    try {
+      const res = await fetch('/api/kitchen/orders');
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const json = await res.json();
+      setOrders(json.data ?? []);
+      setError(null);
+    } catch (e) {
+      console.error('Failed to load orders:', e);
+      setError('Could not load orders — retrying in 15 s');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    const t = setInterval(load, 15_000);
     return () => clearInterval(t);
   }, [load]);
 
   async function updateStatus(id: number, status: string) {
-    await fetch(`/api/kitchen/orders/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    load();
+    try {
+      const res = await fetch(`/api/kitchen/orders/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      await load();
+    } catch (e) {
+      console.error('Status update failed:', e);
+      alert('Could not update order status — please try again.');
+    }
   }
 
   async function print(id: number) {
     setPrinting(id);
-    await fetch(`/api/kitchen/orders/${id}/print`, { method: 'POST' });
-    setPrinting(null);
+    try {
+      const res = await fetch(`/api/kitchen/orders/${id}/print`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Printer error ${res.status}`);
+    } catch (e) {
+      console.error('Print failed:', e);
+      alert('Print failed — check printer connection.');
+    } finally {
+      setPrinting(null);
+    }
   }
 
   if (loading)
@@ -88,11 +113,31 @@ export default function KitchenPage() {
     <div className='min-h-screen bg-gray-950 text-white p-4'>
       <div className='flex items-center justify-between mb-6'>
         <h1 className='text-2xl font-bold'>Kitchen Dashboard</h1>
-        <span className='text-sm text-gray-400'>Auto-refreshes every 15s</span>
+        <span className='text-sm text-gray-400'>Auto-refreshes every 15 s</span>
       </div>
+
+      {error && (
+        <div className='mb-4 px-4 py-3 bg-red-900/60 border border-red-700 rounded-lg text-red-200 text-sm'>
+          ⚠ {error}
+        </div>
+      )}
+
       {orders.length === 0 ? (
-        <div className='flex items-center justify-center h-64 text-gray-500 text-lg'>
-          No active orders
+        <div className='flex flex-col items-center justify-center h-64 gap-3 text-gray-500'>
+          <svg
+            className='w-12 h-12 text-gray-700'
+            fill='none'
+            viewBox='0 0 24 24'
+            stroke='currentColor'
+          >
+            <path
+              strokeLinecap='round'
+              strokeLinejoin='round'
+              strokeWidth={1.5}
+              d='M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'
+            />
+          </svg>
+          <p className='text-lg'>No active orders — all caught up!</p>
         </div>
       ) : (
         <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'>
@@ -115,8 +160,8 @@ export default function KitchenPage() {
                   {order.customerPhone}
                 </p>
                 <p className='text-xs text-gray-400'>
-                  {new Date(order.createdAt).toLocaleTimeString()} → ready{' '}
-                  {new Date(order.estimatedReadyAt).toLocaleTimeString()}
+                  Placed {new Date(order.createdAt).toLocaleTimeString()} →
+                  ready {new Date(order.estimatedReadyAt).toLocaleTimeString()}
                 </p>
               </CardHeader>
               <CardContent className='space-y-1 border-t border-gray-700 pt-3'>
@@ -125,7 +170,7 @@ export default function KitchenPage() {
                     <p className='text-sm font-medium'>
                       {line.quantity}× {line.itemName}
                     </p>
-                    {line.modifiers?.map((m, i) => (
+                    {line.modifiers.map((m, i) => (
                       <p key={i} className='text-xs text-gray-400 ml-3'>
                         + {m}
                       </p>
@@ -139,15 +184,15 @@ export default function KitchenPage() {
                   </span>
                 </div>
                 <div className='flex gap-2 pt-2'>
-                  {nextStatus[order.status] && (
+                  {NEXT_STATUS[order.status] && (
                     <Button
                       size='sm'
                       className='flex-1'
                       onClick={() =>
-                        updateStatus(order.id, nextStatus[order.status])
+                        updateStatus(order.id, NEXT_STATUS[order.status])
                       }
                     >
-                      {nextLabel[order.status]}
+                      {NEXT_LABEL[order.status]}
                     </Button>
                   )}
                   <Button

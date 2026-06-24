@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { CartItem } from '@/types';
 
-const TAX_RATE = 0.0625; // 6.25% NJ — update to your state
+// FIX #2: Removed the hardcoded 6.25% NJ TAX_RATE.
+// Tax is computed exclusively server-side at 8.875% NYC in pricing.ts.
+// This store no longer exposes taxTotal() or total() to avoid displaying
+// a rate that differed from the actual Stripe charge.
 
 interface CartState {
   items: CartItem[];
@@ -9,11 +12,8 @@ interface CartState {
   removeItem: (cartId: string) => void;
   updateQuantity: (cartId: string, quantity: number) => void;
   clearCart: () => void;
-  // Computed totals — call as functions
   subtotal: () => number;
   discountTotal: () => number;
-  taxTotal: () => number;
-  total: () => number;
 }
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -61,14 +61,6 @@ export const useCartStore = create<CartState>((set, get) => ({
   clearCart: () => set({ items: [] }),
 
   subtotal: () => get().items.reduce((sum, i) => sum + i.lineTotal, 0),
-
   discountTotal: () =>
     get().items.reduce((sum, i) => sum + (i.lineDiscount ?? 0), 0),
-
-  taxTotal: () => {
-    const taxable = get().subtotal() - get().discountTotal();
-    return Math.round(taxable * TAX_RATE);
-  },
-
-  total: () => get().subtotal() - get().discountTotal() + get().taxTotal(),
 }));

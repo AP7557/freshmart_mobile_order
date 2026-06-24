@@ -1,70 +1,46 @@
-import { NextRequest } from 'next/server';
-import { stripe } from '@/lib/stripe';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { orders } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { stripe } from '@/lib/stripe';
 
 export async function POST(req: NextRequest) {
-  const body = await req.text();
-  const signature = req.headers.get('stripe-signature') ?? '';
+  const sig = req.headers.get('stripe-signature') ?? '';
+  const rawBody = await req.text();
 
   let event;
   try {
     event = stripe.webhooks.constructEvent(
-      body,
-      signature,
+      rawBody,
+      sig,
       process.env.STRIPE_WEBHOOK_SECRET!,
     );
   } catch (err) {
     console.error('Stripe webhook signature failed:', err);
-    return new Response('Invalid signature', { status: 400 });
+    return new NextResponse('Invalid signature', { status: 400 });
   }
 
-  try {
-    switch (event.type) {
-      case 'payment_intent.succeeded': {
-        const pi = event.data.object;
-        const orderId = pi.metadata?.orderId
-          ? Number(pi.metadata.orderId)
-          : null;
-        if (orderId) {
-          await db
-            .update(orders)
-            .set({
-              status: 'paid',
-              stripePaymentIntentId: pi.id,
-              updatedAt: new Date(),
-            })
-            .where(eq(orders.id, orderId));
-        }
-        break;
-      }
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object;
+    const rawId = pi.metadata?.orderId;
 
-      case 'payment_intent.payment_failed':
-      case 'payment_intent.canceled': {
-        const pi = event.data.object;
-        const orderId = pi.metadata?.orderId
-          ? Number(pi.metadata.orderId)
-          : null;
-        if (orderId) {
-          await db
-            .update(orders)
-            .set({ status: 'cancelled', updatedAt: new Date() })
-            .where(eq(orders.id, orderId));
-        }
-        break;
-      }
-
-      default:
-        break; // Unhandled events are ignored
+    // FIX #15: Guard against missing/non-numeric orderId before calling parseInt.
+    // Previously parseInt(undefined) → NaN → silent no-op update, order stuck in pending_payment.
+    const orderId = rawId ? parseInt(rawId, 10) : NaN;
+    if (!rawId || isNaN(orderId)) {
+      console.error('Stripe webhook: invalid orderId in metadata', {
+        piId: pi.id,
+        metadata: pi.metadata,
+      });
+      return NextResponse.json({ received: true }); // 200 so Stripe doesn't retry
     }
-  } catch (err) {
-    console.error(`Error handling Stripe event ${event.type}:`, err);
-    return new Response('Handler error', { status: 500 });
+
+    await db
+      .update(orders)
+      .set({ status: 'paid', updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+    console.log(`Order #${orderId} marked paid (PI: ${pi.id})`);
   }
 
-  return Response.json({ received: true });
+  return NextResponse.json({ received: true });
 }
-
-// Stripe requires the raw body for signature verification
-export const config = { api: { bodyParser: false } };
