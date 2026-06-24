@@ -9,7 +9,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PortalHost } from '@rn-primitives/portal';
-import { ThemeProvider } from '@react-navigation/native'; // ← correct source
+import { ThemeProvider } from 'expo-router/react-navigation'; // ← correct source
 import { NAV_THEME } from '@/lib/theme';
 
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });

@@ -48,10 +48,13 @@ export default function ItemDetailScreen() {
   const { addItem } = useCartStore();
   const { data, isLoading } = useQuery<MenuData>({
     queryKey: ['menu'],
-    queryFn: () => apiFetch('/api/menu'),
+    queryFn: async () => {
+      const response = await apiFetch('/api/menu');
+      return (response as { data: MenuData }).data;
+    },
   });
 
-  const item = data?.items.find((i) => String(i.id) === id);
+  const item = (data?.items ?? []).find((i) => String(i.id) === id);
   const steps = useMemo(() => {
     if (!item || !data) return [];
     return buildSteps(item, data.modifiers, data.modifierOptions);
@@ -70,18 +73,19 @@ export default function ItemDetailScreen() {
   }
 
   const currentStep = steps[step];
+  console.log('currentStep', currentStep);
   const totalSteps = steps.length;
   const isLastStep = step === totalSteps - 1 || totalSteps === 0;
 
-  function toggleOption(modId: number, optId: number, multi: boolean) {
+  function toggleOption(modId: number, opt: ModifierOption, multi: boolean) {
     setSelection((prev) => {
       const current = prev[modId] ?? [];
       if (multi) {
-        return current.includes(optId)
-          ? { ...prev, [modId]: current.filter((x) => x !== optId) }
-          : { ...prev, [modId]: [...current, optId] };
+        return current.includes(opt.id)
+          ? { ...prev, [modId]: current.filter((x) => x !== opt.id) }
+          : { ...prev, [modId]: [...current, opt.id] };
       }
-      return { ...prev, [modId]: [optId] };
+      return { ...prev, [modId]: [opt.id] };
     });
   }
 
@@ -117,7 +121,7 @@ export default function ItemDetailScreen() {
     addItem(cartItem);
     router.back();
   }
-  
+
   const extraCents = Object.entries(selection).reduce(
     (acc, [, optIds]) =>
       acc +
@@ -182,7 +186,9 @@ export default function ItemDetailScreen() {
                   </Text>
                   <View className='flex-row gap-1.5 items-center'>
                     {currentStep.modifier.required && (
-                      <Badge variant='destructive'>Required</Badge>
+                      <Badge variant='destructive'>
+                        <Text>Required</Text>
+                      </Badge>
                     )}
                     <Text className='text-xs text-muted-foreground'>
                       Step {step + 1}/{totalSteps}
@@ -208,7 +214,7 @@ export default function ItemDetailScreen() {
                         onPress={() =>
                           toggleOption(
                             currentStep.modifier.modifierId,
-                            opt.id,
+                            opt,
                             currentStep.modifier.modifierType === 'multiple',
                           )
                         }
@@ -334,7 +340,7 @@ export default function ItemDetailScreen() {
               disabled={!canProceed()}
               className='flex-1'
             >
-              Add to Cart
+              <Text>Add to Cart</Text>
             </Button>
           </View>
         )}

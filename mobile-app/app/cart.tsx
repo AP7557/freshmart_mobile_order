@@ -123,7 +123,7 @@ export default function CartScreen() {
           onPress={() => router.push('/checkout')}
           className='w-full'
         >
-          Proceed to Checkout →
+          <Text>Proceed to Checkout →</Text>
         </Button>
       </View>
     </SafeAreaView>

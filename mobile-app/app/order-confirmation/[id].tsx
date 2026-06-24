@@ -71,7 +71,9 @@ export default function OrderConfirmationScreen() {
         <Text className='text-base text-muted-foreground'>
           Could not load order
         </Text>
-        <Button onPress={() => router.replace('/')}>Back to Home</Button>
+        <Button onPress={() => router.replace('/')}>
+          <Text>Back to Home</Text>
+        </Button>
       </SafeAreaView>
     );
 
@@ -151,7 +153,7 @@ export default function OrderConfirmationScreen() {
           </Text>
         </View>
         <Button size='lg' onPress={() => router.replace('/')}>
-          Back to Home
+          <Text>Back to Home</Text>
         </Button>
       </ScrollView>
     </SafeAreaView>

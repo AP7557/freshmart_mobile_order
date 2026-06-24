@@ -21,7 +21,7 @@ function PromoBanner({ promo }: { promo: Promotion }) {
     <Card className='mr-4 w-72 bg-fm-dark border-0'>
       <CardContent className='p-4'>
         <Badge variant='default' className='mb-2 self-start'>
-          DEAL
+          <Text>DEAL</Text>
         </Badge>
         <Text className='text-white text-lg font-bold leading-tight mb-1'>
           {promo.name}
@@ -36,12 +36,14 @@ export default function HomeScreen() {
   const router = useRouter();
   const { data, isLoading } = useQuery<MenuData>({
     queryKey: ['menu'],
-    queryFn: () => apiFetch('/api/menu'),
+    queryFn: async () => {
+      const response = await apiFetch('/api/menu');
+      return (response as { data: MenuData }).data;
+    },
     staleTime: 30_000,
   });
 
   const promos = (data?.promotions ?? []).filter((p) => p.isActive);
-
   return (
     <SafeAreaView className='flex-1 bg-fm-pale'>
       <ScrollView className='flex-1' showsVerticalScrollIndicator={false}>
@@ -134,7 +136,7 @@ export default function HomeScreen() {
             onPress={() => router.push('/menu')}
             className='bg-fm-dark w-full'
           >
-            View Full Menu →
+            <Text>View Full Menu →</Text>
           </Button>
         </View>
       </ScrollView>
