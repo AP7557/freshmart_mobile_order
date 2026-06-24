@@ -4,10 +4,17 @@ import { db } from '@/db';
 import { promotions, promotionItems } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireRole } from '@/lib/auth';
-import { ok, fail, handleRouteError } from '@/lib/api-response';
+import { ok, handleRouteError } from '@/lib/api-response';
 
-// FIX #14: Added .refine() — percent type capped at 100, dates validated.
-// Previously value:999 was accepted, producing negative taxable amounts.
+function badRequest(errors: unknown) {
+  return new Response(JSON.stringify({ error: errors }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// FIX #14: percent capped at 100; dates validated server-side.
+// FIX: startAt/endAt stored as Date objects (Drizzle timestamp columns require Date, not string).
 const PromotionSchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -33,7 +40,13 @@ const PromotionSchema = z
   .refine((d) => new Date(d.startAt) < new Date(d.endAt), {
     message: 'startAt must be before endAt',
     path: ['endAt'],
-  });
+  })
+  // FIX: Transform ISO strings → Date so Drizzle timestamp columns accept them.
+  .transform((d) => ({
+    ...d,
+    startAt: new Date(d.startAt),
+    endAt: new Date(d.endAt),
+  }));
 
 export async function GET() {
   try {
@@ -56,13 +69,17 @@ export async function POST(req: NextRequest) {
     await requireRole('admin');
     const body = await req.json();
     const parsed = PromotionSchema.safeParse(body);
-    if (!parsed.success) return fail(parsed.error.flatten().fieldErrors, 400);
+    if (!parsed.success) return badRequest(parsed.error.flatten().fieldErrors);
+
     const { itemIds, ...promoData } = parsed.data;
+    // promoData.startAt and promoData.endAt are now Date objects ✅
     const [promo] = await db.insert(promotions).values(promoData).returning();
-    if (itemIds.length)
+
+    if (itemIds.length) {
       await db
         .insert(promotionItems)
         .values(itemIds.map((itemId) => ({ promotionId: promo.id, itemId })));
+    }
     return ok(promo);
   } catch (e) {
     return handleRouteError(e);
@@ -74,22 +91,27 @@ export async function PATCH(req: NextRequest) {
     await requireRole('admin');
     const body = await req.json();
     const { id, itemIds, ...rest } = body;
-    if (!id) return fail('Missing id', 400);
+    if (!id) return badRequest('Missing id');
+
     const parsed = PromotionSchema.partial().safeParse(rest);
-    if (!parsed.success) return fail(parsed.error.flatten().fieldErrors, 400);
+    if (!parsed.success) return badRequest(parsed.error.flatten().fieldErrors);
+
+    // partial().transform() still converts string dates → Date when present ✅
     const [updated] = await db
       .update(promotions)
       .set(parsed.data)
       .where(eq(promotions.id, id))
       .returning();
+
     if (Array.isArray(itemIds)) {
       await db.delete(promotionItems).where(eq(promotionItems.promotionId, id));
-      if (itemIds.length)
+      if (itemIds.length) {
         await db
           .insert(promotionItems)
           .values(
             itemIds.map((itemId: number) => ({ promotionId: id, itemId })),
           );
+      }
     }
     return ok(updated);
   } catch (e) {
@@ -101,7 +123,7 @@ export async function DELETE(req: NextRequest) {
   try {
     await requireRole('admin');
     const { id } = await req.json();
-    if (!id) return fail('Missing id', 400);
+    if (!id) return badRequest('Missing id');
     await db.delete(promotions).where(eq(promotions.id, id));
     return ok({ deleted: id });
   } catch (e) {

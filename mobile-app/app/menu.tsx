@@ -1,26 +1,30 @@
 import { useState, useMemo } from 'react';
-import { View, Text, FlatList, Pressable } from 'react-native';
+import { View, Text, FlatList, Pressable, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchMenu } from '@/lib/api';
-import { MenuItem } from '@/types';
+import { apiFetch } from '@/lib/api';
+import { Item, MenuData } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input'; // Component Fix #1
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Image } from 'expo-image';
+
+async function fetchMenu(): Promise<MenuData> {
+  const res = await apiFetch<{ data: MenuData }>('/api/menu');
+  return res.data;
+}
 
 export default function MenuScreen() {
   const router = useRouter();
   const [search, setSearch] = useState('');
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError } = useQuery<MenuData>({
     queryKey: ['menu'],
     queryFn: fetchMenu,
     staleTime: 30_000,
   });
 
-  const items: MenuItem[] = useMemo(() => {
+  const items: Item[] = useMemo(() => {
     const all = data?.items.filter((i) => i.isActive) ?? [];
     if (!search.trim()) return all;
     const q = search.toLowerCase();
@@ -33,7 +37,6 @@ export default function MenuScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-background' edges={['top']}>
-      {/* Component Fix #1: <Input> instead of raw <TextInput> + StyleSheet */}
       <Input
         placeholder='Search menu…'
         value={search}
@@ -48,6 +51,7 @@ export default function MenuScreen() {
           <Text className='text-muted-foreground'>Loading menu…</Text>
         </View>
       )}
+
       {isError && (
         <View className='flex-1 items-center justify-center px-6'>
           <Text className='text-destructive text-center'>
@@ -55,10 +59,11 @@ export default function MenuScreen() {
           </Text>
         </View>
       )}
+
       {!isLoading && !isError && items.length === 0 && (
         <View className='flex-1 items-center justify-center px-6'>
           <Text className='text-muted-foreground text-center'>
-            No items match "{search}"
+            No items match &ldquo;{search}&rdquo;
           </Text>
         </View>
       )}
@@ -69,7 +74,6 @@ export default function MenuScreen() {
         contentContainerClassName='px-5 pb-8 gap-3'
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          /* Component Fix #2: Pressable + Card replaces TouchableOpacity + StyleSheet */
           <Pressable
             onPress={() => router.push(`/item/${item.id}`)}
             className='active:opacity-70'
@@ -82,7 +86,7 @@ export default function MenuScreen() {
                   <Image
                     source={{ uri: item.imageUrl }}
                     style={{ width: 96, height: 96 }}
-                    contentFit='cover'
+                    resizeMode='cover'
                   />
                 ) : (
                   <View className='w-24 h-24 bg-muted items-center justify-center'>

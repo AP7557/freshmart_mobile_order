@@ -7,20 +7,16 @@ import {
   orderItemModifiers,
   modifierOptions,
 } from '@/db/schema';
-import { inArray } from 'drizzle-orm';
-import Stripe from 'stripe';
-import { ok, fail, handleRouteError } from '@/lib/api-response';
+import { inArray, eq } from 'drizzle-orm';
+import { ok, handleRouteError } from '@/lib/api-response'; // removed: fail
 import {
   calculatePricing,
   calculateEstimatedReadyAt,
   resolveUnitPrice,
 } from '@/lib/pricing';
+import { stripe } from '@/lib/stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-04-10',
-});
-
-// FIX #8: Accept both field names; transform normalises to modifierOptionIds.
+// FIX #8: Accept both field name variants; transform normalises to modifierOptionIds.
 const OrderLineSchema = z
   .object({
     itemId: z.number().int().positive(),
@@ -43,15 +39,21 @@ const CreateOrderSchema = z.object({
   promoCode: z.string().optional(),
 });
 
+function badRequest(errors: unknown) {
+  return new Response(JSON.stringify({ error: errors }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const parsed = CreateOrderSchema.safeParse(body);
-    if (!parsed.success) return fail(parsed.error.flatten().fieldErrors, 400);
+    if (!parsed.success) return badRequest(parsed.error.flatten().fieldErrors);
 
     const { customerName, customerPhone, lines, promoCode } = parsed.data;
 
-    // Resolve server-side prices — client prices are never trusted
     const pricedLines = await Promise.all(
       lines.map(async (l) => {
         const dbItem = await db.query.items.findFirst({
@@ -71,16 +73,15 @@ export async function POST(req: NextRequest) {
     const pricing = await calculatePricing(pricedLines, promoCode);
     const estimatedReadyAt = await calculateEstimatedReadyAt(pricing.total);
 
-    // FIX #4: Entire order creation in a single transaction.
-    // If any insert fails mid-loop the whole order is rolled back — no orphan rows.
+    // FIX #4: Full transaction — no partial order records on failure.
     const order = await db.transaction(async (tx) => {
-      // FIX #9: status starts as 'pending_payment'; webhook advances to 'paid'.
+      // FIX #9: status starts as 'pending_payment'
       const [newOrder] = await tx
         .insert(orders)
         .values({
           customerName,
           customerPhone,
-          estimatedReadyAt,
+          estimatedReadyAt, // already a Date from calculateEstimatedReadyAt
           status: 'pending_payment',
           subtotal: pricing.subtotal,
           discountTotal: pricing.discountTotal,
@@ -127,10 +128,8 @@ export async function POST(req: NextRequest) {
       return newOrder;
     });
 
-    // FIX #4: PI created after transaction succeeds — no leaked PI on DB failure.
-    // FIX #1: clientSecret returned here; mobile checkout no longer calls
-    //         /api/orders/payment-intent separately (which created a second PI).
-    // FIX #15: orderId stored as string in metadata for safe parseInt in webhook.
+    // FIX #1: Single PI created after transaction — clientSecret returned directly.
+    // FIX #15: orderId as string in metadata for safe parseInt in webhook.
     const paymentIntent = await stripe.paymentIntents.create({
       amount: pricing.total,
       currency: 'usd',
@@ -138,14 +137,15 @@ export async function POST(req: NextRequest) {
       automatic_payment_methods: { enabled: true },
     });
 
+    // FIX: Use eq() — Drizzle .where() requires a SQL expression, not a callback.
     await db
       .update(orders)
       .set({ stripePaymentIntentId: paymentIntent.id })
-      .where((t: any) => t.id === order.id);
+      .where(eq(orders.id, order.id));
 
     return ok({
       orderId: order.id,
-      clientSecret: paymentIntent.client_secret, // FIX #1
+      clientSecret: paymentIntent.client_secret,
       pricing,
       estimatedReadyAt,
     });
