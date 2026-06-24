@@ -13,40 +13,54 @@ function badRequest(errors: unknown) {
   });
 }
 
-// FIX #14: percent capped at 100; dates validated server-side.
-// FIX: startAt/endAt stored as Date objects (Drizzle timestamp columns require Date, not string).
-const PromotionSchema = z
-  .object({
-    name: z.string().min(1).max(120),
-    description: z.string().max(500).default(''),
-    type: z.enum(['percent', 'fixed', 'item', 'buy_x_get_y', 'bundle']),
-    value: z.number().int().min(0),
-    startAt: z.iso.datetime(),
-    endAt: z.iso.datetime(),
-    minOrderTotal: z.number().int().min(0).default(0),
-    isActive: z.boolean().default(true),
-    promotionCode: z.string().max(50).optional().nullable(),
-    triggerQty: z.number().int().min(1).default(1),
-    rewardQty: z.number().int().min(1).default(1),
-    triggerItemIds: z.array(z.number().int().positive()).default([]),
-    rewardItemIds: z.array(z.number().int().positive()).default([]),
-    appliesTo: z.string().default('order'),
-    itemIds: z.array(z.number().int().positive()).default([]),
-  })
-  .refine((d) => d.type !== 'percent' || d.value <= 100, {
+// Base shape — shared between POST and PATCH, no transform.
+const PromotionBaseSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).default(''),
+  type: z.enum(['percent', 'fixed', 'item', 'buy_x_get_y', 'bundle']),
+  value: z.number().int().min(0),
+  startAt: z.iso.datetime(),
+  endAt: z.iso.datetime(),
+  minOrderTotal: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
+  promotionCode: z.string().max(50).optional().nullable(),
+  triggerQty: z.number().int().min(1).default(1),
+  rewardQty: z.number().int().min(1).default(1),
+  triggerItemIds: z.array(z.number().int().positive()).default([]),
+  rewardItemIds: z.array(z.number().int().positive()).default([]),
+  appliesTo: z.string().default('order'),
+  itemIds: z.array(z.number().int().positive()).default([]),
+});
+
+// POST — full validation with cross-field refinements + Date transform.
+const PromotionCreateSchema = PromotionBaseSchema.refine(
+  (d) => d.type !== 'percent' || d.value <= 100,
+  {
     message: 'Percent discount cannot exceed 100%',
     path: ['value'],
-  })
+  },
+)
   .refine((d) => new Date(d.startAt) < new Date(d.endAt), {
     message: 'startAt must be before endAt',
     path: ['endAt'],
   })
-  // FIX: Transform ISO strings → Date so Drizzle timestamp columns accept them.
   .transform((d) => ({
     ...d,
-    startAt: new Date(d.startAt),
+    startAt: new Date(d.startAt), // Drizzle timestamp columns require Date
     endAt: new Date(d.endAt),
   }));
+
+// PATCH — partial on the base schema (before transform), then we convert
+// dates manually only if the caller included them.
+const PromotionUpdateSchema = PromotionBaseSchema.partial()
+  .refine(
+    (d) => d.type !== 'percent' || d.value === undefined || d.value <= 100,
+    { message: 'Percent discount cannot exceed 100%', path: ['value'] },
+  )
+  .refine(
+    (d) => !d.startAt || !d.endAt || new Date(d.startAt) < new Date(d.endAt),
+    { message: 'startAt must be before endAt', path: ['endAt'] },
+  );
 
 export async function GET() {
   try {
@@ -68,11 +82,11 @@ export async function POST(req: NextRequest) {
   try {
     await requireRole('admin');
     const body = await req.json();
-    const parsed = PromotionSchema.safeParse(body);
+    const parsed = PromotionCreateSchema.safeParse(body);
     if (!parsed.success) return badRequest(parsed.error.flatten().fieldErrors);
 
     const { itemIds, ...promoData } = parsed.data;
-    // promoData.startAt and promoData.endAt are now Date objects ✅
+    // promoData.startAt / endAt are Date objects here ✅
     const [promo] = await db.insert(promotions).values(promoData).returning();
 
     if (itemIds.length) {
@@ -93,13 +107,20 @@ export async function PATCH(req: NextRequest) {
     const { id, itemIds, ...rest } = body;
     if (!id) return badRequest('Missing id');
 
-    const parsed = PromotionSchema.partial().safeParse(rest);
+    const parsed = PromotionUpdateSchema.safeParse(rest);
     if (!parsed.success) return badRequest(parsed.error.flatten().fieldErrors);
 
-    // partial().transform() still converts string dates → Date when present ✅
+    // Convert date strings → Date only when present in the partial payload.
+    const { startAt, endAt, ...otherFields } = parsed.data;
+    const updatePayload = {
+      ...otherFields,
+      ...(startAt !== undefined && { startAt: new Date(startAt) }),
+      ...(endAt !== undefined && { endAt: new Date(endAt) }),
+    };
+
     const [updated] = await db
       .update(promotions)
-      .set(parsed.data)
+      .set(updatePayload)
       .where(eq(promotions.id, id))
       .returning();
 
