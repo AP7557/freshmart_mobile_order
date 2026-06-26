@@ -79,6 +79,7 @@ export const modifierOptions = pgTable(
     name: text('name').notNull(),
     priceDelta: integer('price_delta').notNull().default(0),
     isDefault: boolean('is_default').notNull().default(false),
+    isActive: boolean('is_active').notNull().default(true),
   },
   (t) => [index('modifier_options_modifier_id_idx').on(t.modifierId)],
 );

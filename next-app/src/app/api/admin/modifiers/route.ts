@@ -31,6 +31,7 @@ const ModifierSchema = z.object({
         name: z.string().min(1).max(200),
         priceDelta: z.number().int().default(0),
         isDefault: z.boolean().default(false),
+        isActive: z.boolean().default(true), // ← ADD
       }),
     )
     .min(1),
@@ -41,9 +42,10 @@ export async function GET() {
     await requireRole('admin');
 
     const mods = await db.select().from(modifiers).orderBy(modifiers.sortOrder);
+
+    // Return ALL options (active + inactive) so admin can toggle them
     const opts = await db.select().from(modifierOptions);
 
-    // Fetch all item-modifier assignments joined with item names in one query
     const assignments = await db
       .select({
         modifierId: itemModifiers.modifierId,
@@ -53,7 +55,6 @@ export async function GET() {
       .from(itemModifiers)
       .innerJoin(items, eq(itemModifiers.itemId, items.id));
 
-    // Group assignments by modifierId
     const assignmentMap: Record<
       number,
       Array<{ id: number; name: string }>
@@ -66,7 +67,6 @@ export async function GET() {
       });
     }
 
-    // Attach assignedItems to each modifier
     const modsWithItems = mods.map((m) => ({
       ...m,
       assignedItems: assignmentMap[m.id] ?? [],

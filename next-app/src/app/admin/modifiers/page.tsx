@@ -9,6 +9,7 @@ type ModifierOption = {
   name: string;
   priceDelta: number;
   isDefault: boolean;
+  isActive: boolean;
 };
 type AssignedItem = { id: number; name: string };
 type Modifier = {
@@ -19,6 +20,7 @@ type Modifier = {
   required: boolean;
   maxChoices: number | null;
   sortOrder: number;
+  isActive: boolean; // ← add this
   options: ModifierOption[];
   assignedItems: AssignedItem[];
 };
@@ -61,15 +63,18 @@ const schema = z.object({
     (v) => (v === '' || v == null ? 0 : Number(v)),
     z.number().int().min(0).default(0),
   ),
+  isActive: z.boolean().default(true), // ← add this
   options: z
     .array(
       z.object({
+        id: z.number().optional(),
         name: z.string().min(1, 'Option name required'),
         priceDelta: z.preprocess(
           (v) => (v === '' || v == null ? 0 : Number(v)),
           z.number().int().default(0),
         ),
         isDefault: z.boolean().default(false),
+        isActive: z.boolean().default(true),
       }),
     )
     .min(1, 'Add at least one option'),
@@ -99,6 +104,7 @@ export default function ModifiersPage() {
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
@@ -107,10 +113,18 @@ export default function ModifiersPage() {
       type: 'single',
       required: false,
       sortOrder: 0,
-      options: [{ name: '', priceDelta: 0, isDefault: false }],
+      isActive: true,
+      options: [
+        {
+          name: '',
+          priceDelta: 0,
+          isDefault: false,
+          isActive: true,
+        },
+      ],
     },
   });
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append } = useFieldArray({
     control,
     name: 'options',
   });
@@ -183,10 +197,13 @@ export default function ModifiersPage() {
       required: mod.required,
       maxChoices: mod.maxChoices ?? undefined,
       sortOrder: mod.sortOrder ?? 0,
+      isActive: mod.isActive,
       options: mod.options.map((o) => ({
+        id: undefined,
         name: o.name,
         priceDelta: o.priceDelta,
         isDefault: o.isDefault,
+        isActive: o.isActive,
       })),
     });
     setShowForm(true);
@@ -389,7 +406,12 @@ export default function ModifiersPage() {
               <button
                 type='button'
                 onClick={() =>
-                  append({ name: '', priceDelta: 0, isDefault: false })
+                  append({
+                    name: '',
+                    priceDelta: 0,
+                    isDefault: false,
+                    isActive: true,
+                  })
                 }
                 className='text-blue-600 text-sm hover:underline font-medium'
               >
@@ -399,53 +421,79 @@ export default function ModifiersPage() {
             <div className='bg-gray-50 rounded-xl p-4 space-y-2'>
               <div className='grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1 pb-1 border-b border-gray-200'>
                 <span className='col-span-5'>Option Name</span>
-                <span className='col-span-4'>Price (cents)</span>
+                <span className='col-span-3'>Price (cents)</span>
                 <span className='col-span-2 text-center'>Default?</span>
-                <span className='col-span-1' />
+                <span className='col-span-2 text-center'>Status</span>
+                {/* ← was col-span-1 */}
               </div>
-              {fields.map((field, i) => (
-                <div
-                  key={field.id}
-                  className='grid grid-cols-12 gap-2 items-center'
-                >
-                  <input
-                    {...register(`options.${i}.name`)}
-                    placeholder='e.g. Wheat Roll'
-                    className='col-span-5 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
-                  />
-                  <div className='col-span-4 relative'>
+              {fields.map((field, i) => {
+                const isActive = watch(`options.${i}.isActive`); // ← watch live value
+
+                return (
+                  <div
+                    key={field.id}
+                    className='grid grid-cols-12 gap-2 items-center'
+                  >
+                    {/* Option name */}
                     <input
-                      type='number'
-                      {...register(`options.${i}.priceDelta`)}
-                      placeholder='0'
-                      className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
+                      {...register(`options.${i}.name`)}
+                      placeholder='e.g. Wheat Roll'
+                      className={`col-span-5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white
+          ${!isActive ? 'opacity-50 line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
                     />
-                    <span className='absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none'>
-                      ¢
-                    </span>
-                  </div>
-                  <div className='col-span-2 flex justify-center'>
-                    <input
-                      type='checkbox'
-                      {...register(`options.${i}.isDefault`)}
-                      className='w-4 h-4 rounded border-gray-300 text-blue-600'
-                    />
-                  </div>
-                  <div className='col-span-1 flex justify-center'>
-                    {fields.length > 1 ? (
+
+                    {/* Price */}
+                    <div className='col-span-3 relative'>
+                      <input
+                        type='number'
+                        {...register(`options.${i}.priceDelta`)}
+                        placeholder='0'
+                        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white
+            ${!isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+                      />
+                      <span className='absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none'>
+                        ¢
+                      </span>
+                    </div>
+
+                    {/* Default checkbox */}
+                    <div className='col-span-2 flex justify-center'>
+                      <input
+                        type='checkbox'
+                        {...register(`options.${i}.isDefault`)}
+                        disabled={!isActive}
+                        className='w-4 h-4 rounded border-gray-300 text-blue-600 disabled:opacity-40'
+                      />
+                    </div>
+
+                    {/* Active/Inactive toggle — replaces the broken × button */}
+                    <div className='col-span-2 flex justify-center'>
+                      {/* Hidden input so isActive stays in form state */}
+                      <input
+                        type='hidden'
+                        {...register(`options.${i}.isActive`)}
+                      />
                       <button
                         type='button'
-                        onClick={() => remove(i)}
-                        className='text-red-400 hover:text-red-600 text-lg leading-none'
+                        onClick={() =>
+                          setValue(`options.${i}.isActive`, !isActive)
+                        }
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium border transition
+            ${
+              isActive
+                ? 'bg-green-50 border-green-200 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-600'
+                : 'bg-gray-100 border-gray-200 text-gray-400 hover:bg-green-50 hover:border-green-200 hover:text-green-700'
+            }`}
+                        title={
+                          isActive ? 'Click to deactivate' : 'Click to activate'
+                        }
                       >
-                        ×
+                        {isActive ? 'Active' : 'Inactive'}
                       </button>
-                    ) : (
-                      <span className='w-5' />
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <p className='text-xs text-gray-400'>
               Positive = upcharge (+50¢), negative = discount (-25¢), 0 =

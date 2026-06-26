@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-type SelectionMap = Record<number, number[]>; // modifierId → selected optionIds
+type ModifierSelectionMap = Record<number, number[]>; // modifierId → selected optionIds
 
 /**
  * MenuModifier has one row per item assignment.
@@ -61,7 +61,8 @@ export default function ItemDetailScreen() {
   }, [item, data]);
 
   const [step, setStep] = useState(0);
-  const [selection, setSelection] = useState<SelectionMap>({});
+  const [modifierSelection, setModifierSelection] =
+    useState<ModifierSelectionMap>({});
   const [qty, setQty] = useState(1);
 
   if (isLoading || !item) {
@@ -77,8 +78,22 @@ export default function ItemDetailScreen() {
   const totalSteps = steps.length;
   const isLastStep = step === totalSteps - 1 || totalSteps === 0;
 
+  useEffect(() => {
+    if (steps.length === 0) return;
+    const defaults: ModifierSelectionMap = {};
+    steps.forEach(({ modifier, options }) => {
+      const defaultOpt = options.find((o) => o.isDefault); // or o.is_default depending on your camelCase mapping
+      if (defaultOpt) {
+        defaults[modifier.modifierId] = [defaultOpt.id];
+      }
+    });
+    if (Object.keys(defaults).length > 0) {
+      setModifierSelection(defaults);
+    }
+  }, [steps]);
+
   function toggleOption(modId: number, opt: ModifierOption, multi: boolean) {
-    setSelection((prev) => {
+    setModifierSelection((prev) => {
       const current = prev[modId] ?? [];
       if (multi) {
         return current.includes(opt.id)
@@ -91,14 +106,16 @@ export default function ItemDetailScreen() {
 
   function canProceed() {
     if (!currentStep || !currentStep.modifier.required) return true;
-    return (selection[currentStep.modifier.modifierId] ?? []).length > 0;
+    return (
+      (modifierSelection[currentStep.modifier.modifierId] ?? []).length > 0
+    );
   }
 
   function handleAddToCart() {
     // Narrows `item` from `Item | undefined` to `Item` inside this function scope
     if (!item) return;
 
-    const selectedIds = Object.values(selection).flat();
+    const selectedIds = Object.values(modifierSelection).flat();
 
     const modifierDelta = selectedIds.reduce((sum, oid) => {
       const opt = data?.modifierOptions.find((o) => o.id === oid);
@@ -122,7 +139,7 @@ export default function ItemDetailScreen() {
     router.back();
   }
 
-  const extraCents = Object.entries(selection).reduce(
+  const extraCents = Object.entries(modifierSelection).reduce(
     (acc, [, optIds]) =>
       acc +
       optIds.reduce((sum, oid) => {
@@ -205,7 +222,7 @@ export default function ItemDetailScreen() {
                 <View className='gap-2'>
                   {currentStep.options.map((opt) => {
                     const selected = (
-                      selection[currentStep.modifier.modifierId] ?? []
+                      modifierSelection[currentStep.modifier.modifierId] ?? []
                     ).includes(opt.id);
                     return (
                       <Button
@@ -245,12 +262,12 @@ export default function ItemDetailScreen() {
           )}
 
           {/* Running summary of choices */}
-          {Object.keys(selection).length > 0 && (
+          {Object.keys(modifierSelection).length > 0 && (
             <View className='gap-1.5'>
               <Text className='text-xs font-semibold text-muted-foreground uppercase tracking-wide'>
                 Your choices
               </Text>
-              {Object.entries(selection).map(([modId, optIds]) => {
+              {Object.entries(modifierSelection).map(([modId, optIds]) => {
                 const mod = data?.modifiers.find(
                   (m) => m.modifierId === Number(modId),
                 );

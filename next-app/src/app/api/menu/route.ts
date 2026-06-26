@@ -32,7 +32,9 @@ export async function GET() {
       .from(modifiers)
       .innerJoin(itemModifiers, eq(modifiers.id, itemModifiers.modifierId));
 
-    const allOptions = await db.select().from(modifierOptions);
+    const allOptions = await db.select().from(modifierOptions).where(
+      eq(modifierOptions.isActive, true), // only active ones
+    );
 
     // Filter active promos whose date window includes right now
     const now = new Date();
