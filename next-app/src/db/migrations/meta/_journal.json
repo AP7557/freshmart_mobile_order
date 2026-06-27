@@ -15,6 +15,13 @@
       "when": 1782262127276,
       "tag": "0001_add_pending_payment_status_and_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782519035133,
+      "tag": "0002_aspiring_wild_pack",
+      "breakpoints": true
     }
   ]
 }

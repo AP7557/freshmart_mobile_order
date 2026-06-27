@@ -19,6 +19,15 @@ export const promotionTypeEnum = pgEnum('promotion_type', [
   'buy_x_get_y',
   'bundle',
 ]);
+export const promotionActiveDaysEnum = pgEnum('active_days', [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+]);
 
 // FIX #9: 'pending_payment' added — orders start here, kitchen never sees this status.
 export const orderStatusEnum = pgEnum('order_status', [
@@ -67,6 +76,7 @@ export const modifiers = pgTable('modifiers', {
   required: boolean('required').notNull().default(false),
   maxChoices: integer('max_choices'),
   sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
 });
 
 export const modifierOptions = pgTable(
@@ -119,6 +129,7 @@ export const promotions = pgTable(
     triggerItemIds: integer('trigger_item_ids').array().notNull().default([]),
     rewardItemIds: integer('reward_item_ids').array().notNull().default([]),
     appliesTo: text('applies_to').notNull().default('order'),
+    activeDays: promotionActiveDaysEnum('active_days').array(), // e.g. ['monday', 'sunday'] — for task #5
   },
   (t) => [index('promotions_is_active_idx').on(t.isActive)],
 );

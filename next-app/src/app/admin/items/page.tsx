@@ -17,7 +17,7 @@ const schema = z.object({
     (v) => (v === '' || v == null ? undefined : Number(v)),
     z.number({ error: 'Price required' }).int().min(0),
   ),
-  imageUrl: z.union([z.string().url(), z.literal('')]).default(''),
+  imageUrl: z.union([z.url(), z.literal('')]).default(''),
   isActive: z.boolean().default(true),
 });
 type ItemFormData = z.output<typeof schema>;
@@ -74,9 +74,11 @@ export default function ItemsPage() {
     load();
   }
 
-  async function deleteItem(id: number) {
-    if (!confirm('Delete this item?')) return;
-    await fetch(`/api/admin/items/${id}`, { method: 'DELETE' });
+  async function handleToggleActive(id: number, isActive: boolean) {
+    await fetch(`/api/admin/items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: !isActive }),
+    });
     load();
   }
 
@@ -199,15 +201,6 @@ export default function ItemsPage() {
                 )}
                 <input type='hidden' {...register('imageUrl')} />
               </div>
-              <div className='flex items-center gap-2 self-end pb-1'>
-                <input
-                  id='isActive'
-                  type='checkbox'
-                  {...register('isActive')}
-                  className='w-4 h-4 accent-primary'
-                />
-                <Label htmlFor='isActive'>Active</Label>
-              </div>
               <div className='col-span-full flex gap-3 pt-2 border-t border-border'>
                 <Button type='submit' disabled={isSubmitting}>
                   {isSubmitting ? 'Saving…' : 'Save'}
@@ -265,10 +258,18 @@ export default function ItemsPage() {
                       </Button>
                       <Button
                         size='sm'
-                        variant='destructive'
-                        onClick={() => deleteItem(item.id)}
+                        variant='outline'
+                        onClick={() =>
+                          handleToggleActive(item.id, item.isActive)
+                        }
+                        className={`
+                       ${
+                         item.isActive
+                           ? 'bg-green-50 border-green-200 text-green-700 '
+                           : 'bg-gray-100 border-gray-200 text-gray-400'
+                       }`}
                       >
-                        Delete
+                        {item.isActive ? 'Active' : 'Inactive'}
                       </Button>
                     </td>
                   </tr>

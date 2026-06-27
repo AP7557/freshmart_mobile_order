@@ -3,9 +3,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type PromoType = 'percent' | 'fixed' | 'item' | 'buy_x_get_y' | 'bundle';
+type ActiveDays =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
 type Item = { id: number; name: string };
 type Promotion = {
   id: number;
@@ -24,6 +34,7 @@ type Promotion = {
   rewardItemIds: number[];
   appliesTo: string;
   linkedItems: Item[];
+  activeDays: ActiveDays[];
 };
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -58,6 +69,19 @@ const schema = z.object({
   appliesTo: z
     .enum(['order', 'trigger_items', 'reward_items'])
     .default('order'),
+  activeDays: z
+    .array(
+      z.enum([
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ]),
+    )
+    .default([]),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -97,6 +121,15 @@ const TYPE_META: Record<
     desc: 'Select items from a bundle set for a group discount',
   },
 };
+const DAYS: ActiveDays[] = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+];
 
 function valueLabel(p: Promotion) {
   if (p.type === 'percent') return `${p.value}% off`;
@@ -236,6 +269,7 @@ export default function PromotionsPage() {
       itemIds: [],
       triggerItemIds: [],
       rewardItemIds: [],
+      activeDays: [],
     },
   });
 
@@ -249,8 +283,8 @@ export default function PromotionsPage() {
     try {
       const res = await fetch('/api/admin/promotions');
       const json = await res.json();
-      setPromos(json.data?.promotions ?? []);
-      setAllItems(json.data?.items ?? []);
+      setPromos(json.data.promotions ?? []);
+      setAllItems(json.data.items ?? []);
     } finally {
       setLoading(false);
     }
@@ -307,15 +341,10 @@ export default function PromotionsPage() {
       triggerItemIds: p.triggerItemIds ?? [],
       rewardItemIds: p.rewardItemIds ?? [],
       appliesTo: (p.appliesTo ?? 'order') as FormData['appliesTo'],
+      activeDays: p.activeDays ?? [], // ← add this
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  async function deletePromo(id: number) {
-    if (!confirm('Delete this promotion?')) return;
-    await fetch(`/api/admin/promotions/${id}`, { method: 'DELETE' });
-    load();
   }
 
   async function toggleActive(p: Promotion) {
@@ -708,6 +737,38 @@ export default function PromotionsPage() {
                 <span className='text-gray-700 font-medium'>Active</span>
               </label>
             </div>
+            <Controller
+              name='activeDays'
+              control={control}
+              render={({ field }) => (
+                <div className='flex flex-wrap gap-2'>
+                  <p className='text-sm text-muted-foreground w-full'>
+                    Active Days (leave empty = every day)
+                  </p>
+                  {DAYS.map((day) => (
+                    <button
+                      key={day}
+                      type='button'
+                      onClick={() =>
+                        field.onChange(
+                          field.value.includes(day)
+                            ? field.value.filter((d) => d !== day)
+                            : [...field.value, day],
+                        )
+                      }
+                      className={cn(
+                        'px-3 py-1 rounded-full text-sm capitalize border transition-colors',
+                        field.value.includes(day)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background border-border text-muted-foreground',
+                      )}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              )}
+            />
           </div>
 
           {/* ── Submit ── */}
@@ -805,17 +866,18 @@ export default function PromotionsPage() {
                     )}
 
                     {/* Linked items preview */}
-                    {p.linkedItems.length > 0 && (
+                    {p.triggerItemIds.length > 0 && (
                       <div className='flex flex-wrap gap-1 mt-1'>
                         <span className='text-xs text-gray-400 shrink-0'>
                           On:
                         </span>
-                        {p.linkedItems.map((item) => (
+                        {p.triggerItemIds.map((id) => (
                           <span
-                            key={item.id}
+                            key={id}
                             className='px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs'
                           >
-                            {item.name}
+                            {allItems.find((i) => i.id === id)?.name ??
+                              `#${id}`}
                           </span>
                         ))}
                       </div>
@@ -837,24 +899,23 @@ export default function PromotionsPage() {
                       {isExpanded ? '▲' : '▼'}
                     </button>
                     <button
-                      onClick={() => toggleActive(p)}
-                      className={`text-xs px-2 py-1 rounded transition ${p.isActive ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'}`}
-                      title={p.isActive ? 'Deactivate' : 'Activate'}
-                    >
-                      {p.isActive ? '⏸' : '▶'}
-                    </button>
-                    <button
                       onClick={() => startEdit(p)}
                       className='text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition'
                     >
                       Edit
                     </button>
-                    <button
-                      onClick={() => deletePromo(p.id)}
-                      className='text-red-500 hover:text-red-700 text-sm px-2 py-1 rounded hover:bg-red-50 transition'
+                    <Button
+                      variant='outline'
+                      size='xs'
+                      onClick={() => toggleActive(p)}
+                      className={`${
+                        p.isActive
+                          ? 'bg-green-50 border-green-200 text-green-700'
+                          : 'bg-gray-100 border-gray-200 text-gray-400'
+                      }`}
                     >
-                      Delete
-                    </button>
+                      {p.isActive ? 'Active' : 'Inactive'}
+                    </Button>
                   </div>
                 </div>
 

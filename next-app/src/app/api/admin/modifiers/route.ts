@@ -25,6 +25,7 @@ const ModifierSchema = z.object({
   required: z.boolean().default(false),
   maxChoices: z.number().int().positive().nullable().default(null),
   sortOrder: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
   options: z
     .array(
       z.object({

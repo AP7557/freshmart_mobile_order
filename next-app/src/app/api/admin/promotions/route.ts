@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
-import { promotions, promotionItems } from '@/db/schema';
+import { promotions, promotionItems, items } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireRole } from '@/lib/auth';
 import { ok, handleRouteError } from '@/lib/api-response';
@@ -30,6 +30,19 @@ const PromotionBaseSchema = z.object({
   rewardItemIds: z.array(z.number().int().positive()).default([]),
   appliesTo: z.string().default('order'),
   itemIds: z.array(z.number().int().positive()).default([]),
+  activeDays: z
+    .array(
+      z.enum([
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ]),
+    )
+    .default([]),
 });
 
 // POST — full validation with cross-field refinements + Date transform.
@@ -66,13 +79,14 @@ export async function GET() {
   try {
     await requireRole('admin');
     const all = await db.select().from(promotions);
-    const items = await db.select().from(promotionItems);
-    return ok(
-      all.map((p) => ({
+    const allMenuItems = await db.select().from(items);
+    return ok({
+      promotions: all.map((p) => ({
         ...p,
-        promotionItems: items.filter((i) => i.promotionId === p.id),
+        promotionItems: allMenuItems.filter((i) => i.id === p.id),
       })),
-    );
+      items: allMenuItems,
+    });
   } catch (e) {
     return handleRouteError(e);
   }
@@ -135,18 +149,6 @@ export async function PATCH(req: NextRequest) {
       }
     }
     return ok(updated);
-  } catch (e) {
-    return handleRouteError(e);
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  try {
-    await requireRole('admin');
-    const { id } = await req.json();
-    if (!id) return badRequest('Missing id');
-    await db.delete(promotions).where(eq(promotions.id, id));
-    return ok({ deleted: id });
   } catch (e) {
     return handleRouteError(e);
   }

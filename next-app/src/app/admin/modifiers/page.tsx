@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
 
 type ModifierOption = {
   id: number;
@@ -210,9 +211,11 @@ export default function ModifiersPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function deleteModifier(id: number) {
-    if (!confirm('Delete this modifier and all its options?')) return;
-    await fetch(`/api/admin/modifiers/${id}`, { method: 'DELETE' });
+  async function handleToggleActiveModifier(id: number, isActive: boolean) {
+    await fetch(`/api/admin/modifiers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: !isActive }),
+    });
     load();
   }
 
@@ -473,23 +476,20 @@ export default function ModifiersPage() {
                         type='hidden'
                         {...register(`options.${i}.isActive`)}
                       />
-                      <button
-                        type='button'
+                      <Button
+                        variant='outline'
+                        size='xs'
                         onClick={() =>
                           setValue(`options.${i}.isActive`, !isActive)
                         }
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium border transition
-            ${
-              isActive
-                ? 'bg-green-50 border-green-200 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-600'
-                : 'bg-gray-100 border-gray-200 text-gray-400 hover:bg-green-50 hover:border-green-200 hover:text-green-700'
-            }`}
-                        title={
-                          isActive ? 'Click to deactivate' : 'Click to activate'
-                        }
+                        className={`${
+                          isActive
+                            ? 'bg-green-50 border-green-200 text-green-700'
+                            : 'bg-gray-100 border-gray-200 text-gray-400'
+                        }`}
                       >
                         {isActive ? 'Active' : 'Inactive'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 );
@@ -616,7 +616,9 @@ export default function ModifiersPage() {
                         <div className='flex-1 min-w-0 space-y-2'>
                           {/* Name + type badges */}
                           <div className='flex flex-wrap items-center gap-2'>
-                            <span className='font-semibold text-gray-900 text-sm'>
+                            <span
+                              className={`font-semibold text-gray-900 text-sm ${!mod.isActive ? 'opacity-50 line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
+                            >
                               {mod.name}
                             </span>
                             {mod.required && (
@@ -670,7 +672,8 @@ export default function ModifiersPage() {
                               onClick={() =>
                                 setAssignTarget(isAssigning ? null : mod.id)
                               }
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition ${isAssigning ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition ${isAssigning ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'} ${!mod.isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+                              disabled={!mod.isActive}
                             >
                               {isAssigning ? '▲ Done' : '+ Assign item'}
                             </button>
@@ -706,16 +709,26 @@ export default function ModifiersPage() {
                           </button>
                           <button
                             onClick={() => startEdit(mod)}
-                            className='text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition'
+                            className={`text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition ${!mod.isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+                            disabled={!mod.isActive}
                           >
                             Edit
                           </button>
-                          <button
-                            onClick={() => deleteModifier(mod.id)}
-                            className='text-red-500 hover:text-red-700 text-sm px-2 py-1 rounded hover:bg-red-50 transition'
+
+                          <Button
+                            size='xs'
+                            variant='outline'
+                            onClick={() =>
+                              handleToggleActiveModifier(mod.id, mod.isActive)
+                            }
+                            className={`${
+                              mod.isActive
+                                ? 'bg-green-50 border-green-200 text-green-700'
+                                : 'bg-gray-100 border-gray-200 text-gray-400'
+                            }`}
                           >
-                            Delete
-                          </button>
+                            {mod.isActive ? 'Active' : 'Inactive'}
+                          </Button>
                         </div>
                       </div>
 

@@ -74,7 +74,6 @@ export default function ItemDetailScreen() {
   }
 
   const currentStep = steps[step];
-  console.log('currentStep', currentStep);
   const totalSteps = steps.length;
   const isLastStep = step === totalSteps - 1 || totalSteps === 0;
 
