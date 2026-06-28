@@ -232,27 +232,25 @@ export default function ItemsPage() {
                 <tr>
                   <th className='px-4 py-3 font-medium'>Name</th>
                   <th className='px-4 py-3 font-medium'>Price</th>
-                  <th className='px-4 py-3 font-medium'>Status</th>
                   <th className='px-4 py-3 font-medium'>Actions</th>
                 </tr>
               </thead>
               <tbody className='divide-y divide-border'>
                 {items.map((item) => (
-                  <tr key={item.id}>
+                  <tr
+                    key={item.id}
+                    className={`${!item.isActive ? 'opacity-60' : ''}`}
+                  >
                     <td className='px-4 py-3 font-medium'>{item.name}</td>
                     <td className='px-4 py-3'>
                       ${(item.basePrice / 100).toFixed(2)}
-                    </td>
-                    <td className='px-4 py-3'>
-                      <Badge variant={item.isActive ? 'default' : 'outline'}>
-                        {item.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
                     </td>
                     <td className='px-4 py-3 flex gap-2'>
                       <Button
                         size='sm'
                         variant='ghost'
                         onClick={() => startEdit(item)}
+                        disabled={!item.isActive}
                       >
                         Edit
                       </Button>

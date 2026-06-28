@@ -16,7 +16,23 @@ type ActiveDays =
   | 'friday'
   | 'saturday'
   | 'sunday';
-type Item = { id: number; name: string };
+type AllItems = {
+  id: number;
+  name: string;
+  description: string;
+  basePrice: number;
+  imageUrl: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+type PromotionItems = {
+  id: number;
+  promotionId: number;
+  itemId: number;
+  itemName: string | null;
+};
+
 type Promotion = {
   id: number;
   name: string;
@@ -33,8 +49,8 @@ type Promotion = {
   triggerItemIds: number[];
   rewardItemIds: number[];
   appliesTo: string;
-  linkedItems: Item[];
   activeDays: ActiveDays[];
+  promotionItems: PromotionItems[];
 };
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -187,7 +203,7 @@ function ItemPicker({
   label: string;
   selectedIds: number[];
   onChange: (ids: number[]) => void;
-  items: Item[];
+  items: AllItems[];
   color?: string;
 }) {
   function toggle(id: number) {
@@ -241,7 +257,7 @@ function ItemPicker({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PromotionsPage() {
   const [promos, setPromos] = useState<Promotion[]>([]);
-  const [allItems, setAllItems] = useState<Item[]>([]);
+  const [allItems, setAllItems] = useState<AllItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Promotion | null>(null);
@@ -284,7 +300,7 @@ export default function PromotionsPage() {
       const res = await fetch('/api/admin/promotions');
       const json = await res.json();
       setPromos(json.data.promotions ?? []);
-      setAllItems(json.data.items ?? []);
+      setAllItems(json.data.allItems ?? []);
     } finally {
       setLoading(false);
     }
@@ -323,6 +339,7 @@ export default function PromotionsPage() {
   }
 
   function startEdit(p: Promotion) {
+    console.log('startEdit', p);
     setEditing(p);
     setFormError(null);
     reset({
@@ -335,7 +352,7 @@ export default function PromotionsPage() {
       promotionCode: p.promotionCode ?? '',
       startAt: p.startAt.slice(0, 16),
       endAt: p.endAt.slice(0, 16),
-      itemIds: p.linkedItems.map((i) => i.id),
+      itemIds: p.promotionItems?.map((i) => i.id) ?? [],
       triggerQty: p.triggerQty ?? 1,
       rewardQty: p.rewardQty ?? 1,
       triggerItemIds: p.triggerItemIds ?? [],
@@ -727,16 +744,6 @@ export default function PromotionsPage() {
                 </span>
               )}
             </label>
-            <div className='flex items-end pb-2'>
-              <label className='flex items-center gap-2 text-sm cursor-pointer'>
-                <input
-                  type='checkbox'
-                  {...register('isActive')}
-                  className='w-4 h-4 rounded border-gray-300 text-blue-600'
-                />
-                <span className='text-gray-700 font-medium'>Active</span>
-              </label>
-            </div>
             <Controller
               name='activeDays'
               control={control}
@@ -901,6 +908,7 @@ export default function PromotionsPage() {
                     <button
                       onClick={() => startEdit(p)}
                       className='text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition'
+                      disabled={!p.isActive}
                     >
                       Edit
                     </button>
@@ -944,7 +952,7 @@ export default function PromotionsPage() {
                     {p.type === 'bundle' && (
                       <p>
                         <strong>Bundle items:</strong>{' '}
-                        {p.linkedItems.map((i) => i.name).join(', ') ||
+                        {p.promotionItems.map((i) => i.itemName).join(', ') ||
                           'None set'}
                       </p>
                     )}

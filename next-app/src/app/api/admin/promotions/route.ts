@@ -78,14 +78,24 @@ const PromotionUpdateSchema = PromotionBaseSchema.partial()
 export async function GET() {
   try {
     await requireRole('admin');
-    const all = await db.select().from(promotions);
+    const allPromos = await db.select().from(promotions);
+    const allPromoItems = await db.select().from(promotionItems);
     const allMenuItems = await db.select().from(items);
+
+    // Build a lookup map for O(1) item name resolution
+    const itemMap = new Map(allMenuItems.map((i) => [i.id, i]));
+
     return ok({
-      promotions: all.map((p) => ({
+      promotions: allPromos.map((p) => ({
         ...p,
-        promotionItems: allMenuItems.filter((i) => i.id === p.id),
+        promotionItems: allPromoItems
+          .filter((pi) => pi.promotionId === p.id)
+          .map((pi) => ({
+            ...pi,
+            itemName: itemMap.get(pi.itemId)?.name ?? null,
+          })),
       })),
-      items: allMenuItems,
+      allItems: allMenuItems,
     });
   } catch (e) {
     return handleRouteError(e);

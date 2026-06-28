@@ -442,7 +442,7 @@ export default function ModifiersPage() {
                       {...register(`options.${i}.name`)}
                       placeholder='e.g. Wheat Roll'
                       className={`col-span-5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white
-          ${!isActive ? 'opacity-50 line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
+          ${!isActive ? 'line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
                     />
 
                     {/* Price */}
@@ -452,7 +452,7 @@ export default function ModifiersPage() {
                         {...register(`options.${i}.priceDelta`)}
                         placeholder='0'
                         className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white
-            ${!isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+            ${!isActive ? 'border-gray-100' : 'border-gray-200'}`}
                       />
                       <span className='absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none'>
                         ¢
@@ -585,7 +585,7 @@ export default function ModifiersPage() {
                   return (
                     <div
                       key={mod.id}
-                      className='bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden'
+                      className={`bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden ${!mod.isActive ? 'opacity-60' : ''}`}
                     >
                       {/* ── Main row ── */}
                       <div className='flex items-start gap-3 px-4 py-3'>
@@ -617,7 +617,7 @@ export default function ModifiersPage() {
                           {/* Name + type badges */}
                           <div className='flex flex-wrap items-center gap-2'>
                             <span
-                              className={`font-semibold text-gray-900 text-sm ${!mod.isActive ? 'opacity-50 line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
+                              className={`font-semibold text-gray-900 text-sm ${!mod.isActive ? 'line-through text-gray-400 border-gray-100' : 'border-gray-200'}`}
                             >
                               {mod.name}
                             </span>
@@ -672,7 +672,7 @@ export default function ModifiersPage() {
                               onClick={() =>
                                 setAssignTarget(isAssigning ? null : mod.id)
                               }
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition ${isAssigning ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'} ${!mod.isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium transition ${isAssigning ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'} ${!mod.isActive ? 'border-gray-100' : 'border-gray-200'}`}
                               disabled={!mod.isActive}
                             >
                               {isAssigning ? '▲ Done' : '+ Assign item'}
@@ -709,7 +709,7 @@ export default function ModifiersPage() {
                           </button>
                           <button
                             onClick={() => startEdit(mod)}
-                            className={`text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition ${!mod.isActive ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}
+                            className={`text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50 transition ${!mod.isActive ? 'border-gray-100' : 'border-gray-200'}`}
                             disabled={!mod.isActive}
                           >
                             Edit
